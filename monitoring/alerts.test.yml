@@ -1,0 +1,58 @@
+# Unit tests for alerts.yml. Run from the repo root:
+#   promtool test rules monitoring/alerts.test.yml
+# No Docker needed: promtool feeds synthetic series into the rules.
+rule_files:
+  - alerts.yml
+
+# Same as prometheus.yml, so "for: 2m" behaves like it does live.
+evaluation_interval: 15s
+
+tests:
+  # 1) About one third of prod requests fail, with healthy traffic (1 request/s).
+  #    Each 15 s sample adds 10 successes and 5 failures, so the ratio is 5/15.
+  - interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="sk-svc-prod",status="200"}'
+        values: '0+10x40'
+      - series: 'http_requests_total{job="sk-svc-prod",status="500"}'
+        values: '0+5x40'
+    alert_rule_test:
+      # The series start at 0, so rate() over [5m] ramps up while the window fills:
+      # total traffic passes the 0.2/s guard only after 1m (60 requests / 300 s = 0.2).
+      # The condition is true from 1m15s, so at 3m the alert is pending, not firing.
+      - eval_time: 3m
+        alertname: ProdHighErrorRate
+        exp_alerts: []
+      # 2 minutes after the condition became true (3m15s), it fires.
+      - eval_time: 4m
+        alertname: ProdHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: sk-svc prod 5xx error ratio above 5%
+              description: '33.33% of sk-svc prod requests returned 5xx over the last 5 minutes (threshold 5%, for 2 minutes).'
+              runbook: RUNBOOK.md
+
+  # 2) Every prod request fails, but traffic is near zero: 1 request per 15 s
+  #    (about 0.07/s, under the 0.2/s guard). Must not page.
+  - interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="sk-svc-prod",status="500"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ProdHighErrorRate
+        exp_alerts: []
+
+  # 3) Healthy traffic with an error ratio under 5% (4 of 104, about 3.8%). Must not page.
+  - interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="sk-svc-prod",status="200"}'
+        values: '0+100x40'
+      - series: 'http_requests_total{job="sk-svc-prod",status="500"}'
+        values: '0+4x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ProdHighErrorRate
+        exp_alerts: []

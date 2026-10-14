@@ -1,0 +1,32 @@
+# Prometheus config for sk-svc (Compose profile "monitoring", project sksvc-mon).
+# Mounted at /etc/prometheus/prometheus.yml; alerts.yml sits next to it.
+
+global:
+  # How often to pull /metrics from each target.
+  scrape_interval: 15s
+  # How often to evaluate the alert rules in alerts.yml.
+  evaluation_interval: 15s
+
+# Relative path: resolved from this file's folder, so it works in the
+# container (/etc/prometheus) and for "promtool check config" on this file.
+rule_files:
+  - alerts.yml
+
+# Where Prometheus sends firing alerts: the Compose service name on sksvc-net.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# One job per environment, so the alert can filter on job="sk-svc-prod".
+# Targets are Compose service names on the shared network sksvc-net.
+scrape_configs:
+  - job_name: sk-svc-dev
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['app-dev:8080']
+
+  - job_name: sk-svc-prod
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['app-prod:8080']

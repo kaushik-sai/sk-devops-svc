@@ -1,0 +1,25 @@
+# Alert rules for sk-svc. Unit tested by alerts.test.yml (promtool test rules).
+groups:
+  - name: sk-svc
+    rules:
+      # Page only for what users feel: more than 5% of prod requests fail.
+      # The traffic guard (> 0.2 requests/s) stops a few failures at near-zero
+      # traffic from paging anyone. "for: 2m" filters short blips.
+      - alert: ProdHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="sk-svc-prod",status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="sk-svc-prod"}[5m]))
+          ) > 0.05
+          and
+          sum(rate(http_requests_total{job="sk-svc-prod"}[5m])) > 0.2
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: sk-svc prod 5xx error ratio above 5%
+          # $value is the error ratio (the left side of "and"), shown as a percentage.
+          description: '{{ $value | humanizePercentage }} of sk-svc prod requests returned 5xx over the last 5 minutes (threshold 5%, for 2 minutes).'
+          # Relative link to the runbook in this repo.
+          runbook: RUNBOOK.md
