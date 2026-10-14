@@ -137,6 +137,13 @@ stages:
                     port: 7312
                     sha: $(sha)
 
+                # Images stay on the agent, so old ones pile up. Keep what a rollback could need.
+                # Only after a good prod deploy, and never fails the release.
+                - pwsh: ./scripts/Remove-OldImages.ps1 -Keep 3
+                  displayName: 'Clean up: old sk-svc images'
+                  condition: succeeded()
+                  continueOnError: true
+
                 # Self-healing: only when a step failed AFTER the prod deploy started
                 # (a failed audit must not roll back a healthy prod). The run still ends red.
                 - pwsh: |
