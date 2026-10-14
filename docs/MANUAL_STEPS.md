@@ -14,9 +14,11 @@ These steps need your accounts and the web UIs. Do them after the build is finis
 2. Create a **public** project. If public projects are unavailable, check Organization settings, Policies, and the "Allow public projects" setting.
 3. Create a **PAT** with the scope *Agent Pools: Read & manage*, short expiry (a few days). It is only for registering the agent. **Never commit it or paste it into chat.**
 4. Create an agent pool named `sk-local` (Organization settings, Agent pools; make it self-hosted).
-5. Download the Windows agent from the pool (New agent), unzip it outside the repo, and register it with `config.cmd` (URL of your org, auth type PAT, pool `sk-local`). Run it **interactively** with `run.cmd` in a PowerShell window under your own account (Docker Desktop must be running). A Windows service account may not reach Docker Desktop.
-6. Install the **Azure Pipelines** app for GitHub and create two pipelines from the YAML files: `pipelines/pr.yml` (name `sk-svc-pr`) and `pipelines/main.yml` (name `sk-svc-main`).
-7. Create Environments `sk-svc-dev` and `sk-svc-prod`. On `sk-svc-prod` add an **Approvals** check with yourself as approver.
+5. Download the Windows agent from the pool (New agent), unzip it to `C:\agent`, and register it with `config.cmd` (URL of your org, auth type PAT, pool `sk-local`), as a service.
+6. Give the agent its own local account instead of `NETWORK SERVICE` (in an Administrator PowerShell): create `svc-azagent` (`New-LocalUser`), add it to `docker-users`, then in `services.msc` set the agent service's **Log On** to `.\svc-azagent`.
+7. As yourself, run `pwsh ./scripts/Initialize-AgentHost.ps1` once. It creates `C:\svc-app` (deploy history and the database password, shared by you and the agent account), grants the agent account access to the tools and the Docker CLI, and writes `C:\agent\.env` (the agent's PATH and the two shared-folder variables). Then **restart the agent service** and open a new terminal. Docker Desktop must be running (it runs in your signed-in session).
+8. Install the **Azure Pipelines** app for GitHub and create two pipelines from the YAML files: `pipelines/pr.yml` (name `sk-svc-pr`) and `pipelines/main.yml` (name `sk-svc-main`).
+9. Create Environments `sk-svc-dev` and `sk-svc-prod`. On `sk-svc-prod` add an **Approvals** check with yourself as approver.
 
 ## C. Enforce the PR gate on GitHub
 

@@ -119,6 +119,7 @@ ReleaseGuard (`modules/ReleaseGuard`) is a small module with exactly three expor
   - promtool runs, but is non-blocking.
 - `pipelines/templates/build.yml`: builds `sk-svc:<sha>` once and checks the SHA label. It saves the image to a tar and scans it with the pinned Trivy image. The scan runs twice: everything is shown, and only fixable HIGH/CRITICAL fail. It honours `.trivyignore.yaml`.
 - `pipelines/templates/deploy.yml`: runs `Invoke-Deploy.ps1` for one environment and marks `deployStarted`.
+- `scripts/Remove-OldImages.ps1`: runs after a good prod deploy; deletes old `sk-svc` images but keeps the last 3 deployed releases per environment (rollback targets) and anything a container uses.
 - `pipelines/templates/smoke.yml`: runs `Test-Smoke.ps1` against one environment's port.
 - `pipelines/pr.yml` (`sk-svc-pr`): runs every check plus the image build and scan, then removes the PR image.
 - `pipelines/main.yml` (`sk-svc-main`):
@@ -201,6 +202,6 @@ Everything listed in [VERIFY_LOCALLY.md](VERIFY_LOCALLY.md) under "Verified" was
 - The rollback drill with images from two real commits.
 - The live alert drill (pending at about 1 minute, firing at about 3).
 - Each pipeline step body executed locally.
-- 168 Pester tests, lint, Terraform, promtool and Trivy.
+- 194 Pester tests, lint, Terraform, promtool and Trivy.
 
 The remaining items need the Azure DevOps agent and GitHub settings ([MANUAL_STEPS.md](MANUAL_STEPS.md)).

@@ -12,6 +12,7 @@ $libPath = Join-Path -Path $PSScriptRoot -ChildPath 'lib'
 . (Join-Path -Path $libPath -ChildPath 'Config.ps1')
 . (Join-Path -Path $libPath -ChildPath 'Metrics.ps1')
 . (Join-Path -Path $libPath -ChildPath 'Work.ps1')
+. (Join-Path -Path $libPath -ChildPath 'Home.ps1')
 
 # Read configuration (including whether the secret file is there) once, at startup.
 $config = Get-AppConfig
@@ -21,6 +22,7 @@ Start-PodeServer -Threads 4 -ScriptBlock {
     Use-PodeScript -Path (Join-Path -Path $libPath -ChildPath 'Config.ps1')
     Use-PodeScript -Path (Join-Path -Path $libPath -ChildPath 'Metrics.ps1')
     Use-PodeScript -Path (Join-Path -Path $libPath -ChildPath 'Work.ps1')
+    Use-PodeScript -Path (Join-Path -Path $libPath -ChildPath 'Home.ps1')
 
     Add-PodeEndpoint -Address * -Port $config.Port -Protocol Http
 
@@ -47,6 +49,12 @@ Start-PodeServer -Threads 4 -ScriptBlock {
             Add-RequestMetric -Store (Get-PodeState -Name 'metrics') `
                 -StatusCode $WebEvent.Response.StatusCode -DurationSeconds $elapsed
         }
+    }
+
+    # Home page: service name, version and the endpoint list, for people opening the port in a browser.
+    Add-PodeRoute -Method Get -Path '/' -ScriptBlock {
+        $cfg = Get-PodeState -Name 'config'
+        Write-PodeHtmlResponse -Value (Get-HomePage -ServiceName 'sk-svc' -Version $cfg.Version)
     }
 
     # Liveness: never affected by FAIL_RATE, so Docker's health check does not flap.
