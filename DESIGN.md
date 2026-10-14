@@ -37,6 +37,10 @@ The app only knows `DB_PASSWORD_FILE`, so the code is identical in both places.
 
 Trivy has no Compose scanner; the Compose file is hardened by hand (no capabilities, `no-new-privileges`, localhost-only ports, no DB port).
 
+## Branching and promotion
+
+Trunk-based: short-lived `feature/*` branches, squash-merged into `main`. Every merge to `main` builds **one** image, `sk-svc:<sha>`, that goes to dev and then, after approval, the **same image** goes to prod. Environments are pipeline stages, not branches. A long-lived `dev` branch is not needed while every change on `main` is meant to ship. If unrelated changes later need to ship independently, add a `dev` integration branch that builds and deploys to dev, and cherry-pick or merge only release-ready commits into `main` for prod (this needs `^dev$` in `policy.json` and a `dev` trigger in the pipeline).
+
 ## Fifteen pipelines sharing the agents
 
 - **Capacity:** one free parallel job means queues; buy parallel jobs and run a pool of agents selected by demands, not one named machine.
