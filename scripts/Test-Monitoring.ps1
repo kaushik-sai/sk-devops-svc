@@ -45,11 +45,9 @@ function Get-MonitoringCheck {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory)] [string] $MonitoringPath)
-    @(
-        [pscustomobject] @{ Name = 'check config'; Arguments = @('check', 'config', (Join-Path -Path $MonitoringPath -ChildPath 'prometheus.yml')) }
-        [pscustomobject] @{ Name = 'check rules'; Arguments = @('check', 'rules', (Join-Path -Path $MonitoringPath -ChildPath 'alerts.yml')) }
-        [pscustomobject] @{ Name = 'test rules'; Arguments = @('test', 'rules', (Join-Path -Path $MonitoringPath -ChildPath 'alerts.test.yml')) }
-    )
+    [pscustomobject] @{ Name = 'check config'; Arguments = @('check', 'config', (Join-Path -Path $MonitoringPath -ChildPath 'prometheus.yml')) }
+    [pscustomobject] @{ Name = 'check rules'; Arguments = @('check', 'rules', (Join-Path -Path $MonitoringPath -ChildPath 'alerts.yml')) }
+    [pscustomobject] @{ Name = 'test rules'; Arguments = @('test', 'rules', (Join-Path -Path $MonitoringPath -ChildPath 'alerts.test.yml')) }
 }
 
 # Runs each check and returns one result per check: Name, Ok, Output.
