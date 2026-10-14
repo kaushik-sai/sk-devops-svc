@@ -1,0 +1,44 @@
+# sk-svc-pr: the PR gate. Runs on every pull request into main.
+# GitHub branch protection requires this check to pass before a PR can merge.
+
+trigger: none
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  name: sk-local
+  demands:
+    - Agent.OS -equals Windows_NT
+
+jobs:
+  - job: Validate
+    displayName: 'PR validation'
+    timeoutInMinutes: 30
+    steps:
+      # Full history and tags: Test-BranchCompliance walks main's history from the baseline tag.
+      - checkout: self
+        fetchDepth: 0
+        fetchTags: true
+        clean: true
+
+      - template: templates/checks.yml
+        parameters:
+          runTerraform: true
+          runTrivyConfig: true
+          runMonitoringTests: true
+          runBranchCompliance: true
+          branchName: $(System.PullRequest.SourceBranch)
+
+      # Build and scan the image too, so a broken Dockerfile or a fixable HIGH/CRITICAL CVE blocks the PR.
+      - template: templates/build.yml
+        parameters:
+          sha: $(Build.SourceVersion)
+
+      # PR images are not deployed; remove the tag so the agent does not fill up.
+      - pwsh: docker image rm 'sk-svc:$(Build.SourceVersion)'
+        displayName: 'Clean up: remove PR image'
+        condition: always()
+        continueOnError: true
