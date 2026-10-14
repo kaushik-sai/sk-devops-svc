@@ -13,10 +13,14 @@
       3. Sets permissions: the agent account may modify <Root>; <Root>\secrets is limited to
          SYSTEM, Administrators, you and the agent account. The agent account may read and run
          the tools folder and the Docker Desktop CLI.
-      4. Writes the agent's .env: RELEASEGUARD_HOME, SKSVC_DB_PASSWORD_FILE and PATH (machine PATH plus
-         yours), so pipeline jobs find the shared folder, pwsh, docker, terraform and the rest. The agent
-         loads .env at startup; it does not read a .path file (checked with agent 5.280).
-      5. Sets the same two variables for your own account, so your terminal and the pipeline
+      4. Writes <Root>\docker\config.json, the agent account's own Docker CLI settings, pointing at
+         Docker Desktop's plugin folder: Docker Desktop installs Compose per user, so without it the
+         agent account has no "docker compose".
+      5. Writes the agent's .env: RELEASEGUARD_HOME, SKSVC_DB_PASSWORD_FILE, DOCKER_CONFIG and PATH
+         (machine PATH plus yours), so pipeline jobs find the shared folder, pwsh, docker, compose,
+         terraform and the rest. The agent loads .env at startup; it does not read a .path file
+         (checked with agent 5.280).
+      6. Sets RELEASEGUARD_HOME and SKSVC_DB_PASSWORD_FILE for your own account, so your terminal and the pipeline
          share one history and one password.
     Restart the agent service afterwards so it reads .env.
 
@@ -34,6 +38,9 @@
 .PARAMETER ToolDirectories
     Folders the agent account must be able to read and run (tools, Docker CLI).
 
+.PARAMETER DockerPluginDirectory
+    Docker Desktop's CLI plugin folder (docker-compose.exe, docker-buildx.exe).
+
 .EXAMPLE
     pwsh ./scripts/Initialize-AgentHost.ps1 -WhatIf
 
@@ -48,7 +55,8 @@ param(
     [string[]] $ToolDirectories = @(
         (Join-Path -Path $HOME -ChildPath 'kaushik' -AdditionalChildPath 'softwares'),
         (Join-Path -Path $HOME -ChildPath 'AppData' -AdditionalChildPath 'Local', 'Programs', 'DockerDesktop')
-    )
+    ),
+    [string] $DockerPluginDirectory = (Join-Path -Path $HOME -ChildPath 'AppData' -AdditionalChildPath 'Local', 'Programs', 'DockerDesktop', 'resources', 'cli-plugins')
 )
 
 Set-StrictMode -Version Latest
@@ -85,13 +93,14 @@ function Get-HostLayout {
         History    = Join-Path -Path $Root -ChildPath 'history'
         Secrets    = Join-Path -Path $Root -ChildPath 'secrets'
         SecretFile = Join-Path -Path $Root -ChildPath 'secrets' -AdditionalChildPath 'db_password'
+        Docker     = Join-Path -Path $Root -ChildPath 'docker'
     }
 }
 
 function New-HostFolder {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)] [pscustomobject] $Layout)
-    foreach ($folder in @($Layout.Root, $Layout.History, $Layout.Secrets)) {
+    foreach ($folder in @($Layout.Root, $Layout.History, $Layout.Secrets, $Layout.Docker)) {
         if (-not (Test-Path -LiteralPath $folder) -and $PSCmdlet.ShouldProcess($folder, 'Create folder')) {
             New-Item -ItemType Directory -Path $folder | Out-Null
             Write-Information "Created $folder"
@@ -187,6 +196,31 @@ function Set-AgentEnvironmentFile {
     }
 }
 
+# The agent account's own Docker CLI settings. Only cliPluginsExtraDirs is set: it tells the CLI
+# where Docker Desktop keeps the Compose and Buildx plugins. Other keys already in the file stay.
+function Set-AgentDockerConfig {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $PluginDirectory
+    )
+    if (-not (Test-Path -LiteralPath $PluginDirectory)) {
+        Write-Warning "Docker plugin folder not found: $PluginDirectory (docker compose will be missing for the agent)."
+    }
+    $config = [ordered] @{}
+    if (Test-Path -LiteralPath $Path) {
+        $existing = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
+        foreach ($key in $existing.Keys) {
+            $config[$key] = $existing[$key]
+        }
+    }
+    $config['cliPluginsExtraDirs'] = @($PluginDirectory)
+    if ($PSCmdlet.ShouldProcess($Path, 'Write Docker CLI settings for the agent')) {
+        $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Path
+        Write-Information "Wrote $Path"
+    }
+}
+
 function Initialize-AgentHost {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([int])]
@@ -194,7 +228,8 @@ function Initialize-AgentHost {
         [Parameter(Mandatory)] [string] $Root,
         [Parameter(Mandatory)] [string] $AgentAccount,
         [Parameter(Mandatory)] [string] $AgentDirectory,
-        [string[]] $ToolDirectories = @()
+        [string[]] $ToolDirectories = @(),
+        [string] $DockerPluginDirectory = ''
     )
     $layout = Get-HostLayout -Root $Root
     New-HostFolder -Layout $layout
@@ -205,12 +240,18 @@ function Initialize-AgentHost {
     $failures = Set-HostPermission -Layout $layout -AgentAccount $AgentAccount `
         -CurrentUser ([Environment]::UserName) -ToolDirectories $ToolDirectories
 
+    if ($DockerPluginDirectory) {
+        Set-AgentDockerConfig -Path (Join-Path -Path $layout.Docker -ChildPath 'config.json') -PluginDirectory $DockerPluginDirectory
+    }
+
     $variables = @{ RELEASEGUARD_HOME = $layout.Root; SKSVC_DB_PASSWORD_FILE = $layout.SecretFile }
     if (Test-Path -LiteralPath $AgentDirectory) {
-        # Machine PATH plus your user PATH: where pwsh 7, docker, terraform, trivy and promtool are.
-        # Only for the agent's own environment, not for your user variables.
+        # Only for the agent's own environment, not for your user variables:
+        # PATH = machine PATH plus your user PATH (pwsh 7, docker, terraform, trivy, promtool);
+        # DOCKER_CONFIG = the agent's Docker CLI settings written above (finds docker compose).
         $agentValues = $variables.Clone()
         $agentValues['PATH'] = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+        $agentValues['DOCKER_CONFIG'] = $layout.Docker
         Set-AgentEnvironmentFile -Path (Join-Path -Path $AgentDirectory -ChildPath '.env') -Values $agentValues
     } else {
         Write-Warning "Agent folder not found, skipped .env: $AgentDirectory"
@@ -229,7 +270,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         Write-Error 'Initialize-AgentHost.ps1 configures the Windows agent machine and runs on Windows only.' -ErrorAction Continue
         exit 1
     }
-    $failed = Initialize-AgentHost -Root $Root -AgentAccount $AgentAccount -AgentDirectory $AgentDirectory -ToolDirectories $ToolDirectories
+    $failed = Initialize-AgentHost -Root $Root -AgentAccount $AgentAccount -AgentDirectory $AgentDirectory `
+        -ToolDirectories $ToolDirectories -DockerPluginDirectory $DockerPluginDirectory
     if ($failed -gt 0) {
         Write-Error "$failed step(s) failed; see the warnings above." -ErrorAction Continue
         exit 1
