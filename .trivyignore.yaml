@@ -1,0 +1,37 @@
+# Trivy ignore list. Every entry is scoped to one file, explains why it cannot be fixed now,
+# and expires, so the build fails again and someone re-checks once the date passes.
+# Used by the image scan in pipelines/templates/build.yml (--ignorefile .trivyignore.yaml).
+
+vulnerabilities:
+  # PowerShell's own bundled .NET libraries. pwsh 7.6.7 (the newest stable release, 2026-10-13)
+  # ships 10.0.10; the fix is in 10.0.13. Remove when a pwsh release with .NET 10.0.13+ is out.
+  # The service does not process PKCS#7/CMS or XML signatures, so these paths are not reachable.
+  - id: CVE-2026-84008
+    paths:
+      - "opt/microsoft/powershell/pwsh.deps.json"
+    statement: "Bundled in pwsh 7.6.7, no newer pwsh release yet; code path not used by the service"
+    expired_at: 2026-11-30
+  - id: CVE-2026-96958
+    paths:
+      - "opt/microsoft/powershell/pwsh.deps.json"
+    statement: "Bundled in pwsh 7.6.7, no newer pwsh release yet; XML signatures not used by the service"
+    expired_at: 2026-11-30
+  - id: CVE-2026-96959
+    paths:
+      - "opt/microsoft/powershell/pwsh.deps.json"
+    statement: "Bundled in pwsh 7.6.7, no newer pwsh release yet; XML signatures not used by the service"
+    expired_at: 2026-11-30
+  - id: CVE-2026-96960
+    paths:
+      - "opt/microsoft/powershell/pwsh.deps.json"
+    statement: "Bundled in pwsh 7.6.7, no newer pwsh release yet; XML signatures not used by the service"
+    expired_at: 2026-11-30
+
+  # Pode's deps.json declares System.Security.Cryptography.Pkcs 8.0.1, but this copy is never
+  # loaded: pwsh already loads its own 10.0 copy first (checked with [SignedCms].Assembly.Location
+  # inside the image). Remove when Pode updates the dependency.
+  - id: CVE-2026-84008
+    paths:
+      - "usr/local/share/powershell/Modules/Pode/2.14.1/Libs/net10.0/Pode.deps.json"
+    statement: "Pode's declared copy is never loaded; pwsh's own copy is used at runtime"
+    expired_at: 2026-11-30
