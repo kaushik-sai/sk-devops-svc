@@ -1,0 +1,35 @@
+# Alertmanager config for sk-svc. Mounted at /etc/alertmanager/alertmanager.yml.
+# Local setup: alerts are only shown in the Alertmanager UI (http://127.0.0.1:7393).
+# No external integration, so no credentials are needed or committed.
+
+route:
+  # Everything goes to the default receiver.
+  receiver: default
+  # One notification per alert name, not one per label set.
+  group_by: ['alertname']
+  # Wait a little so related alerts arrive in one notification.
+  group_wait: 30s
+  # Wait before notifying about new alerts added to a group already sent.
+  group_interval: 5m
+  # Re-notify about a still-firing alert every 4 hours.
+  repeat_interval: 4h
+
+receivers:
+  # No *_configs: Alertmanager keeps the alert and shows it in its UI only.
+  - name: default
+
+  # Example of a real receiver (not used). Credentials must come from a secret,
+  # never from this file: mount the secret as a file and point *_file at it.
+  # To use it, uncomment and set "receiver: oncall" in the route above.
+  #
+  # - name: oncall
+  #   slack_configs:
+  #     - api_url_file: /run/secrets/slack_webhook_url
+  #       channel: '#sk-svc-alerts'
+  #       send_resolved: true
+  #   email_configs:
+  #     - to: oncall@example.com
+  #       from: alertmanager@example.com
+  #       smarthost: smtp.example.com:587
+  #       auth_username: alertmanager@example.com
+  #       auth_password_file: /run/secrets/smtp_password
