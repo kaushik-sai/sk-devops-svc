@@ -21,7 +21,7 @@ The app only knows `DB_PASSWORD_FILE`, so the code is identical in both places.
 3. The user-assigned identity `id-sk-svc-<env>` gets **Key Vault Secrets User** on that vault only.
 4. The Container App runs as that identity and references the secret by its versionless URL; the platform fetches it and mounts it as a file.
 
-**Caveat:** Terraform state contains the secret value. Real state must be remote, encrypted, locked and readable only by the pipeline identity (or the secret is created outside Terraform). Locally, `Start-Stack.ps1` generates a random password into git-ignored `.secrets/`.
+**Caveat:** Terraform state contains the secret value. Real state must be remote, encrypted, locked and readable only by the pipeline identity (or the secret is created outside Terraform). Locally, `Start-Stack.ps1` generates a random password into git-ignored `.secrets/`. On the agent machine there is no vault, so the password and the deploy history live in `C:\svc-app` (set up by `scripts/Initialize-AgentHost.ps1`; the secrets folder is readable only by SYSTEM, Administrators, the agent account and you). That is the stand-in for Key Vault: with a subscription, the pipeline would read the secret from Key Vault through a workload-identity service connection instead.
 
 ## PR gate: fail or warn
 
