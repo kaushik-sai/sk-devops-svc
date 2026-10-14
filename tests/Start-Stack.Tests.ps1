@@ -35,6 +35,21 @@ Describe 'Initialize-SecretFile' {
     }
 }
 
+Describe 'Get-SecretFilePath' {
+    BeforeEach { $script:saved = $env:SKSVC_DB_PASSWORD_FILE }
+    AfterEach { $env:SKSVC_DB_PASSWORD_FILE = $script:saved }
+
+    It 'uses SKSVC_DB_PASSWORD_FILE when set (shared location on the agent machine)' {
+        $env:SKSVC_DB_PASSWORD_FILE = Join-Path -Path $TestDrive -ChildPath 'shared'
+        Get-SecretFilePath | Should -Be (Join-Path -Path $TestDrive -ChildPath 'shared')
+    }
+
+    It 'falls back to .secrets/db_password in the repo' {
+        $env:SKSVC_DB_PASSWORD_FILE = $null
+        Get-SecretFilePath | Should -BeLike '*.secrets*db_password'
+    }
+}
+
 Describe 'Get-CommitSha' {
     It 'returns the full 40-character SHA' {
         Mock Invoke-StackCommand { 'a' * 40 }
@@ -118,6 +133,18 @@ Describe 'Start-Stack' {
     It 'skips monitoring when asked' {
         Start-Stack -SkipMonitoring | Out-Null
         Should -Invoke Start-ComposeProject -Times 0 -ParameterFilter { $Project -eq 'sksvc-mon' }
+    }
+
+    It '-DataOnly prepares network, password and Postgres, and builds or deploys nothing' {
+        $output = Start-Stack -DataOnly
+        Should -Invoke New-StackNetwork -Times 1
+        Should -Invoke Initialize-SecretFile -Times 1
+        Should -Invoke Start-ComposeProject -Times 1 -ParameterFilter { $Project -eq 'sksvc-data' }
+        Should -Invoke Wait-ContainerHealthy -Times 1 -ParameterFilter { $ContainerName -eq 'sksvc-db' }
+        Should -Invoke Build-ServiceImage -Times 0
+        Should -Invoke Invoke-EnvironmentDeploy -Times 0
+        Should -Invoke Start-ComposeProject -Times 0 -ParameterFilter { $Project -eq 'sksvc-mon' }
+        ($output -join "`n") | Should -Match 'Postgres are ready'
     }
 
     It 'stops before building when Docker is not running' {

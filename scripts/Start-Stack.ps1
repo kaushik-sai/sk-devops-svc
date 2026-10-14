@@ -5,7 +5,8 @@
 .DESCRIPTION
     1. Checks that Docker is running.
     2. Creates the shared Docker network sksvc-net if it is missing.
-    3. Generates a random database password in .secrets/db_password if it is missing (git-ignored).
+    3. Generates a random database password if it is missing: in $env:SKSVC_DB_PASSWORD_FILE when
+       set (shared C:\svc-app\secrets\db_password on the agent machine), else .secrets/db_password.
     4. Builds the image sk-svc:<full commit SHA> from the current commit.
     5. Starts Postgres (project sksvc-data) and waits until it is healthy.
     6. Deploys dev and prod with scripts/Invoke-Deploy.ps1 (migrations, start, health wait, deploy history).
@@ -15,12 +16,20 @@
 .PARAMETER SkipMonitoring
     Do not start the monitoring project.
 
+.PARAMETER DataOnly
+    Only steps 1, 2, 3 and 5: make sure the network, the password and Postgres are there.
+    The pipeline runs this before each deploy, because its fresh checkout starts with nothing.
+
 .EXAMPLE
     pwsh ./scripts/Start-Stack.ps1
+
+.EXAMPLE
+    pwsh ./scripts/Start-Stack.ps1 -DataOnly
 #>
 [CmdletBinding()]
 param(
-    [switch] $SkipMonitoring
+    [switch] $SkipMonitoring,
+    [switch] $DataOnly
 )
 
 Set-StrictMode -Version Latest
@@ -104,6 +113,18 @@ function New-RandomSecret {
     return -join $chars
 }
 
+# Where the database password lives: the shared location when SKSVC_DB_PASSWORD_FILE is set
+# (agent machine), otherwise the git-ignored .secrets folder in the repo (any other laptop).
+function Get-SecretFilePath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    if ($env:SKSVC_DB_PASSWORD_FILE) {
+        return $env:SKSVC_DB_PASSWORD_FILE
+    }
+    return Join-Path -Path $script:RepoRoot -ChildPath '.secrets' -AdditionalChildPath 'db_password'
+}
+
 function Initialize-SecretFile {
     [CmdletBinding()]
     [OutputType([string])]
@@ -117,7 +138,7 @@ function Initialize-SecretFile {
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
     # -NoNewline: the password is exactly the file content, with no trailing newline.
     Set-Content -LiteralPath $Path -Value (New-RandomSecret) -NoNewline
-    Write-Information "Generated a random database password in $Path (git-ignored)."
+    Write-Information "Generated a random database password in $Path."
     return $Path
 }
 
@@ -179,18 +200,26 @@ function Start-ComposeProject {
 
 function Start-Stack {
     [CmdletBinding(SupportsShouldProcess)]
-    param([switch] $SkipMonitoring)
+    param(
+        [switch] $SkipMonitoring,
+        [switch] $DataOnly
+    )
 
     Assert-DockerRunning
     New-StackNetwork -Name $script:NetworkName
-    Initialize-SecretFile -Path (Join-Path -Path $script:RepoRoot -ChildPath '.secrets' -AdditionalChildPath 'db_password') | Out-Null
-
-    $sha = Get-CommitSha -RepoPath $script:RepoRoot
-    $tag = Build-ServiceImage -Sha $sha -RepoPath $script:RepoRoot
+    Initialize-SecretFile -Path (Get-SecretFilePath) | Out-Null
 
     # Database first: migrations in the deploy step need it.
     Start-ComposeProject -Project 'sksvc-data' -ProfileName 'data'
     Wait-ContainerHealthy -ContainerName 'sksvc-db'
+
+    if ($DataOnly) {
+        Write-Output 'Network, database password and Postgres are ready.'
+        return
+    }
+
+    $sha = Get-CommitSha -RepoPath $script:RepoRoot
+    $tag = Build-ServiceImage -Sha $sha -RepoPath $script:RepoRoot
 
     foreach ($environment in @('dev', 'prod')) {
         Invoke-EnvironmentDeploy -Environment $environment -ImageTag $sha
@@ -215,7 +244,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     # Show progress messages (Write-Information) when run as a script.
     $InformationPreference = 'Continue'
     try {
-        Start-Stack -SkipMonitoring:$SkipMonitoring
+        Start-Stack -SkipMonitoring:$SkipMonitoring -DataOnly:$DataOnly
         exit 0
     } catch {
         Write-Error $_.Exception.Message -ErrorAction Continue
