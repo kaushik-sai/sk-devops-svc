@@ -1,0 +1,10 @@
+{
+  "mainBranch": "main",
+  "allowedBranchPatterns": [
+    "^main$",
+    "^feature/[a-z0-9._-]+$",
+    "^release/[a-z0-9._-]+$"
+  ],
+  "prMergeCommitPattern": "\\(#\\d+\\)$",
+  "baseline": "governance-baseline"
+}
