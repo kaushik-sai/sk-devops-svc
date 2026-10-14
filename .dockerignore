@@ -1,0 +1,3 @@
+# Only app/ is copied into the image; keep the build context small and secret-free.
+*
+!app/
