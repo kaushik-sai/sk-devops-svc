@@ -22,13 +22,10 @@ The build machine was a Windows 11 laptop with Docker Desktop running (full mode
 | Monitoring | Prometheus targets `sk-svc-dev` and `sk-svc-prod` UP; `app_info` carries the SHA; Grafana dashboard `sk-svc` provisioned | as expected |
 | First real pipeline runs (Azure DevOps agent `sk-local`, account `svc-azagent`) | `sk-svc-pr` on PR #1 and PR #2; `sk-svc-main` run #6 for the merge of PR #2 | PR checks green; main run green through Build, Dev, the prod approval and Prod (audit artifact `release-audit-prod`, smoke tests, image clean-up); dev and prod `/version` = the merge commit |
 | Branch policy with the baseline tag | `governance-baseline` on the last bootstrap commit; `Test-BranchCompliance -RepoPath .` after two squash-merged PRs | `COMPLIANT`; the commit check runs (no baseline warning) |
+| Evidence runs on the agent | Run 1: PR #4 (`sk-svc-pr` build 8). Run 2: PR #3 merge (`sk-svc-main` build 9). Run 3: `sk-svc-main` build 10 with `prodFailRate=1` | Run 1 failed at Pester and GitHub blocked the merge; run 2 green to prod; run 3 failed the prod smoke test, `Invoke-Rollback` restored `ed4fb2f`, and a second rollback was a no-op. Details in [EVIDENCE.md](EVIDENCE.md) |
 
 ## Still to verify
 
-1. **The three evidence runs.** See [MANUAL_STEPS.md](MANUAL_STEPS.md) section D and [EVIDENCE.md](EVIDENCE.md).
-   - For the bad release, queue `sk-svc-main` with `prodFailRate=1`.
-   - Expected result: Dev passes, the prod smoke test shows `FAIL work 20 of 20 requests failed`, the `Rollback` step runs, and the run ends red.
-   - Afterwards, prod `/version` shows the previous release.
-2. **"Docker not running" error, for real.** Stop Docker Desktop, then run `Invoke-Rollback -Environment prod` after an A/B deploy. Expected: it fails with error ID `ReleaseGuard.DockerNotRunning`. So far this case has only been tested with mocked Docker.
-3. **Linux.** All scripts are written for pwsh 7 on Linux too (Join-Path everywhere, no Windows-only calls), but they were only run on Windows. To check, run `Invoke-Pester -Path ./tests` on Linux pwsh 7 and expect all tests to pass. On Linux the Terraform test filter uses `tests/dev.tftest.hcl`; the pipeline builds the path with `Join-Path`, so it adapts.
-4. **Terraform against Azure.** Not possible (no subscription) and out of scope. See [terraform/README.md](../terraform/README.md) for what to add before a real apply.
+1. **"Docker not running" error, for real.** Stop Docker Desktop, then run `Invoke-Rollback -Environment prod` after an A/B deploy. Expected: it fails with error ID `ReleaseGuard.DockerNotRunning`. So far this case has only been tested with mocked Docker.
+2. **Linux.** All scripts are written for pwsh 7 on Linux too (Join-Path everywhere, no Windows-only calls), but they were only run on Windows. To check, run `Invoke-Pester -Path ./tests` on Linux pwsh 7 and expect all tests to pass. On Linux the Terraform test filter uses `tests/dev.tftest.hcl`; the pipeline builds the path with `Join-Path`, so it adapts.
+3. **Terraform against Azure.** Not possible (no subscription) and out of scope. See [terraform/README.md](../terraform/README.md) for what to add before a real apply.

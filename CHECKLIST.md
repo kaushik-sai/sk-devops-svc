@@ -89,7 +89,7 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 ### Prod
 - [x] Promote the **same image** (no rebuild) to `prod` (second Compose project, other port)
 - [x] Azure DevOps **Environment** with an **approval check**
-- [ ] Prod smoke test; on failure **auto-rollback** via `Invoke-Rollback`
+- [x] Prod smoke test; on failure **auto-rollback** via `Invoke-Rollback`
 - [x] `New-ReleaseAudit` output attached to every prod deploy as an artifact
 
 ### Structure
@@ -98,16 +98,16 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 - [x] Optional: migrations stage (numbered SQL to Postgres container, idempotent)
 
 ### Evidence (the three required runs)
-- [ ] **Run 1:** PR blocked by your checks
-- [ ] **Run 2:** green deploy to prod
-- [ ] **Run 3:** bad release deliberately broken, caught, rolled back
-- [ ] Links recorded in `docs/EVIDENCE.md`
+- [x] **Run 1:** PR blocked by your checks
+- [x] **Run 2:** green deploy to prod
+- [x] **Run 3:** bad release deliberately broken, caught, rolled back
+- [x] Links recorded in `docs/EVIDENCE.md`
 
 ## Part 4: Operations and design (~1 hr)
 
 - [x] Prometheus + Alertmanager added to Compose
 - [x] One alert rule you would actually want to be woken for (symptom-based, e.g. 5xx ratio, with `for:` and sensible threshold)
-- [ ] Make it fire; screenshot in `docs/evidence/`
+- [x] Make it fire; screenshot in `docs/evidence/`
 - [x] **RUNBOOK.md**: prod deploy at 01:50, alert at 02:00, a third of requests 5xx
   - [x] First 15 minutes, minute by minute
   - [x] Rollback vs. fix-forward decision criteria
