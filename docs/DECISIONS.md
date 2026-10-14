@@ -51,3 +51,50 @@ Ambiguities and the call made, one line each.
 | 23 | Notifications | Alertmanager UI only; commented Slack/email placeholder; no credentials | A real integration needs a secret |
 | 24 | Dashboards | Grafana OSS included, configured from files in the repo. Panels: request rate, 5xx ratio, p95 latency, running version. Default (change if you object): port 7391, bound to localhost, read-only anonymous access so no password is committed | Runbook step "open the dashboard"; uses the histogram and `app_info` metrics |
 | 25 | Runbook roles | Generic roles: engineering lead, service owner, support lead (default, change if you object) | No real people involved |
+
+## Step 6: Calls made while building
+
+| # | Question | Decision | Why |
+|---|----------|----------|-----|
+| 26 | Base image | `mcr.microsoft.com/dotnet/runtime-deps:10.0.9-alpine3.24` plus the official pwsh 7.6.7 musl tarball (SHA-256 checked), Pode 2.14.1 saved with `Save-PSResource` | The `mcr.microsoft.com/powershell` repo stopped at 7.5 on Alpine 3.20; runtime-deps is patched, small and has a non-root `app` user |
+| 27 | ICU in the image | Add `icu-libs` and turn off invariant globalization | Pode loads culture-specific message files and fails to start without ICU |
+| 28 | Request logs | Custom Pode logging method writing to stdout | Pode's terminal logger prints only with a TTY, which containers do not have |
+| 29 | What `http_requests_total` counts | User traffic only (`/work`, `/version`, unknown paths); not `/metrics` or `/healthz` | Scrapes and health checks add steady 200s that would hide the real error ratio and inflate the alert's traffic guard |
+| 30 | Does `Start-Stack.ps1` start monitoring? | Yes, by default (`-SkipMonitoring` to skip) | One command brings up everything the runbook uses |
+| 31 | Compose hardening | Apps: `cap_drop: ALL`, `no-new-privileges`, localhost-only ports; Postgres publishes no port | Trivy has no Compose scanner, so the file is hardened by hand |
+| 32 | Postgres trusts loopback by default | `POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256` on the `db` service | Otherwise a wrong password still works over 127.0.0.1; verified a wrong password now fails |
+| 33 | PR checks again on main? | Build stage reruns lint and Pester and scans the new image; Terraform and the config scan are skipped | The squash-merged code is the PR's code, which already passed; the image is new, so it is scanned again |
+| 34 | When does the pipeline roll back prod? | Only if a step failed **after** the prod deploy started (`deployStarted` variable) | A failed audit step must not roll back a healthy prod |
+| 35 | Image findings that cannot be fixed | Fix first: `apk upgrade`, delete Pode's unused `netstandard2.0`/`net8.0`/`net9.0` libraries. Remaining pwsh-bundled CVEs go in `.trivyignore.yaml`, scoped to one file each, with a reason and an expiry date | pwsh 7.6.7 is the newest release; Pode's declared Pkcs 8.0.1 is never loaded (checked inside the image) |
+| 36 | `terraform test -filter` silently runs 0 tests on Windows with a forward slash | Build the path with `Join-Path`, and fail the step if the output does not show at least one passed run | A green step that tested nothing is worse than a red one |
+| 37 | PR images | Removed from the agent after the scan | Only main builds are deployed; keeps the shared Docker daemon from filling up |
+
+## Step 7: ReleaseGuard details
+
+| # | Question | Decision | Why |
+|---|----------|----------|-----|
+| 38 | How does `Test-BranchCompliance` fail a pipeline step and stay testable? | Returns a result object, then throws `ReleaseGuard.PolicyViolation` on violations; `-NoThrow` only returns the object | An unhandled terminating error makes `pwsh -Command` exit non-zero |
+| 39 | Baseline tag missing | Warn and skip only the commit-history check; branch names are still checked | Naming can be enforced from day one; history checks start once the tag exists |
+| 40 | Which branches does "all branches" mean? | Local branches; `main` found locally or as `origin/main` | CI checkouts have no local `main`; the PR pipeline passes `-BranchName` anyway |
+| 41 | How is a rollback recorded? | Bad entry becomes `rolled_back`; a new `deployed` entry with `rolledBackFrom = <bad tag>` is appended | History stays append-only and readable; the idempotency check reads `rolledBackFrom` |
+| 42 | Which release is "current" for a rollback? | The latest entry, whatever its status; the target is the newest earlier `deployed` entry with a different tag | After a failed deploy the environment runs the failed tag |
+| 43 | Failed deploys | A `/healthz` timeout appends a `failed` entry, then exits 1 | Rollback then knows what is really running |
+| 44 | Duplicate history entries | A deploy only appends when the latest entry is not already this tag as `deployed` | Re-running a deploy (or `Start-Stack`) adds nothing |
+| 45 | Calling migrations from the deploy | In a child pwsh process, checking its exit code (`ReleaseGuard.MigrationsFailed`) | The migration script's `exit` cannot end the deploy script |
+
+## Step 8: Migrations, Terraform, monitoring details
+
+| # | Question | Decision | Why |
+|---|----------|----------|-----|
+| 46 | Password for psql | `docker exec -e PGPASSWORD` (name only), value set from `.secrets/db_password` and restored afterwards | The secret never appears on a command line or in logs |
+| 47 | One transaction per migration file | File plus its `schema_migrations` INSERT sent on stdin to `psql --single-transaction -v ON_ERROR_STOP=1`; files contain no BEGIN/COMMIT | Simplest atomic option; a broken file leaves no table and no record |
+| 48 | Migration file names | `NNN_lowercase_name.sql`, sorted by the number; anything else fails the run | Numeric sort avoids text-order surprises; the strict name is safe inside SQL |
+| 49 | Example schema | `greetings` table, then a defaulted `language` column | Smallest example that shows a backward-compatible (expand) change |
+| 50 | Terraform tests per environment | One test file per env, run with `-var-file=envs/<env>.tfvars`; each has a root run (names) and a module run (resource internals) | Assertions cannot see inside a child module from a root run |
+| 51 | IDs at plan time | Mock provider with fake Azure IDs, `override_during = plan` | Otherwise IDs are unknown at plan time and the identity and secret wiring cannot be compared |
+| 52 | Trivy AZU-0013 (Key Vault network default Deny) | Inline `#trivy:ignore` with a reason | Deny without a VNet and private endpoints blocks the app and Terraform; private networking is listed under "Before a real apply" |
+| 53 | Placeholder image | `mcr.microsoft.com/k8se/quickstart:latest` as the default; tests use `example.invalid/sk-svc:test` | No registry exists; a real deploy passes `<registry>/sk-svc:<sha>` |
+| 54 | Deployer permission on Key Vault | Not in Terraform; documented (pipeline identity needs Key Vault Secrets Officer) | Keeps to the resources the brief lists |
+| 55 | Runbook link in the alert | Annotation `runbook: RUNBOOK.md` | No public repo URL to point at yet |
+| 56 | Dashboard for two environments | One line per environment (`sum by (job)`); the 5xx panel shows 0% instead of "No data" | Dev and prod side by side, no template variables |
+| 57 | Grafana auth | Anonymous Viewer, login form and basic auth disabled, localhost-only port | No password committed; the built-in admin account cannot be used |
