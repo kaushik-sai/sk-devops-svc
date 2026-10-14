@@ -1,0 +1,7 @@
+# Keep line endings stable on Windows so Dockerfiles, YAML and scripts behave the same everywhere
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.psm1 text eol=lf
+*.psd1 text eol=lf
+*.cmd text eol=crlf
+*.png binary

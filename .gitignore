@@ -1,0 +1,39 @@
+# Secrets and local config: never commit
+.env
+.env.*
+*.pat
+*.pem
+*.key
+secrets/
+*.auto.tfvars.secret
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfplan
+override.tf
+override.tf.json
+
+# Self-hosted agent (downloaded locally, large and contains credentials)
+agent/
+_work/
+.agent
+.credentials
+.credentials_rsaparams
+
+# Pester / analyzer output
+TestResults.xml
+coverage.xml
+*.nupkg
+
+# Generated audit output
+out/
+audit-*.md
+audit-*.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
