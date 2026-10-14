@@ -5,6 +5,7 @@
 *.pem
 *.key
 secrets/
+.secrets/
 *.auto.tfvars.secret
 
 # Terraform
@@ -32,6 +33,8 @@ coverage.xml
 out/
 audit-*.md
 audit-*.json
+release-audit-*.md
+release-audit-*.json
 
 # OS / editor
 .DS_Store
