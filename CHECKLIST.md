@@ -19,7 +19,7 @@ Scoring: Pipeline 30 | PowerShell 25 | Container + Terraform 20 | Operations 15 
 - [x] Create PAT (Agent Pools: Read & manage) for agent registration only. **Never commit it.**
 - [x] Register self-hosted agent on laptop (registered with `config.cmd`; host prepared by `scripts/Initialize-AgentHost.ps1`)
 - [x] Decide and note: registry = Docker Hub / GHCR / local on agent
-- [ ] Start a time log in `docs/TIME.md`
+- [x] Start a time log in `docs/TIME.md`
 
 ## Part 3: Service, container, Terraform (~2 hrs). Build this first; Parts 1 and 2 depend on it
 
@@ -128,7 +128,7 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 - [x] Commit history is readable (small, meaningful commits)
 - [ ] You can explain every line of code (follow-up call walks through it)
 - [ ] GitHub repo and Azure DevOps project are both **public** (GitHub public; Azure DevOps cannot be, see DECISIONS #64)
-- [ ] `docs/TIME.md`: time spent and what you skipped, plus what you would do next
+- [x] `docs/TIME.md`: time spent and what you skipped, plus what you would do next
 - [ ] Email **hello@hellovibe.in**, subject: `Take-home: DevOps Engineer (Cloud) - Sai Kaushik`
   - [ ] GitHub link + Azure DevOps link
   - [ ] Links to the three pipeline runs
