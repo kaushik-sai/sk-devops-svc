@@ -20,29 +20,15 @@ The build machine was a Windows 11 laptop with Docker Desktop running (full mode
 | Rollback drill | Deploy A (image built from the previous commit), deploy B with `FAIL_RATE=0.5`, smoke test fails, `Invoke-Rollback -Environment prod`, `/version` shows A, run it again | rolled back; second run "Already rolled back", no docker call |
 | Alert drill | Prod at `FAIL_RATE=0.33` with `Send-Traffic.ps1` at 2 requests/s | pending after ~1 min, firing at ~3 min, visible in Alertmanager with `severity="page"` |
 | Monitoring | Prometheus targets `sk-svc-dev` and `sk-svc-prod` UP; `app_info` carries the SHA; Grafana dashboard `sk-svc` provisioned | as expected |
+| First real pipeline runs (Azure DevOps agent `sk-local`, account `svc-azagent`) | `sk-svc-pr` on PR #1 and PR #2; `sk-svc-main` run #6 for the merge of PR #2 | PR checks green; main run green through Build, Dev, the prod approval and Prod (audit artifact `release-audit-prod`, smoke tests, image clean-up); dev and prod `/version` = the merge commit |
+| Branch policy with the baseline tag | `governance-baseline` on the last bootstrap commit; `Test-BranchCompliance -RepoPath .` after two squash-merged PRs | `COMPLIANT`; the commit check runs (no baseline warning) |
 
 ## Still to verify
 
-1. **First real runs of both pipelines on the agent.** These can only run once the Azure DevOps setup in [MANUAL_STEPS.md](MANUAL_STEPS.md) is done.
-   - Open a PR from `feature/...` and check that `sk-svc-pr` is green. Every step should pass. The promtool step only passes if `promtool` is on the agent's PATH; it is non-blocking either way.
-   - Merge it and check `sk-svc-main`: Build, then Dev, then the Prod approval, then Prod. After that, `Invoke-RestMethod http://127.0.0.1:7312/version` returns the merge commit SHA, and the run has an artifact `release-audit-prod`.
-   - The agent needs the following on PATH for the account that runs `run.cmd`:
-     - `pwsh` and `git`
-     - `docker` (Docker Desktop running)
-     - `terraform` 1.7+
-     - optionally `promtool`
-
-     Pester 5.9.1 and PSScriptAnalyzer 1.25.0 are installed by the pipeline itself if they are missing.
-2. **The three evidence runs.** See [MANUAL_STEPS.md](MANUAL_STEPS.md) section D.
+1. **The three evidence runs.** See [MANUAL_STEPS.md](MANUAL_STEPS.md) section D and [EVIDENCE.md](EVIDENCE.md).
    - For the bad release, queue `sk-svc-main` with `prodFailRate=1`.
    - Expected result: Dev passes, the prod smoke test shows `FAIL work 20 of 20 requests failed`, the `Rollback` step runs, and the run ends red.
    - Afterwards, prod `/version` shows the previous release.
-3. **Branch policy with the baseline tag.** After `git tag governance-baseline` and `git push origin governance-baseline`, merge a PR, then run:
-   ```powershell
-   Import-Module ./modules/ReleaseGuard
-   Test-BranchCompliance -RepoPath .
-   ```
-   Expected: `COMPLIANT`, and the commit check runs instead of warning about the missing baseline.
-4. **"Docker not running" error, for real.** Stop Docker Desktop, then run `Invoke-Rollback -Environment prod` after an A/B deploy. Expected: it fails with error ID `ReleaseGuard.DockerNotRunning`. So far this case has only been tested with mocked Docker.
-5. **Linux.** All scripts are written for pwsh 7 on Linux too (Join-Path everywhere, no Windows-only calls), but they were only run on Windows. To check, run `Invoke-Pester -Path ./tests` on Linux pwsh 7 and expect all tests to pass. On Linux the Terraform test filter uses `tests/dev.tftest.hcl`; the pipeline builds the path with `Join-Path`, so it adapts.
-6. **Terraform against Azure.** Not possible (no subscription) and out of scope. See [terraform/README.md](../terraform/README.md) for what to add before a real apply.
+2. **"Docker not running" error, for real.** Stop Docker Desktop, then run `Invoke-Rollback -Environment prod` after an A/B deploy. Expected: it fails with error ID `ReleaseGuard.DockerNotRunning`. So far this case has only been tested with mocked Docker.
+3. **Linux.** All scripts are written for pwsh 7 on Linux too (Join-Path everywhere, no Windows-only calls), but they were only run on Windows. To check, run `Invoke-Pester -Path ./tests` on Linux pwsh 7 and expect all tests to pass. On Linux the Terraform test filter uses `tests/dev.tftest.hcl`; the pipeline builds the path with `Join-Path`, so it adapts.
+4. **Terraform against Azure.** Not possible (no subscription) and out of scope. See [terraform/README.md](../terraform/README.md) for what to add before a real apply.
