@@ -11,13 +11,13 @@ Scoring: Pipeline 30 | PowerShell 25 | Container + Terraform 20 | Operations 15 
 
 ## 0. Setup (do first, ~30 min, not counted in parts)
 
-- [ ] Create public GitHub repo and push this scaffold
-- [ ] Create free Azure DevOps org + **public** project
+- [x] Create public GitHub repo and push this scaffold
+- [x] Create free Azure DevOps org + **public** project (private: public projects are retired; see DECISIONS #64)
 - [x] Install: PowerShell 7, Pester 5, PSScriptAnalyzer, Git
 - [x] Install: Docker Desktop / Rancher Desktop / Colima + Docker Compose
 - [x] Install: Terraform 1.7+ (or OpenTofu), Trivy (or Checkov)
-- [ ] Create PAT (Agent Pools: Read & manage) for agent registration only. **Never commit it.**
-- [ ] Register self-hosted agent on laptop (script it in `scripts/`)
+- [x] Create PAT (Agent Pools: Read & manage) for agent registration only. **Never commit it.**
+- [x] Register self-hosted agent on laptop (registered with `config.cmd`; host prepared by `scripts/Initialize-AgentHost.ps1`)
 - [x] Decide and note: registry = Docker Hub / GHCR / local on agent
 - [ ] Start a time log in `docs/TIME.md`
 
@@ -71,26 +71,26 @@ Every command needs: Pester tests, comment-based help, clean PSScriptAnalyzer, p
 Runs end to end on the self-hosted agent. Something you would hand to a team of ten.
 
 ### PR validation
-- [ ] PSScriptAnalyzer
-- [ ] Pester
-- [ ] `terraform fmt -check`, `validate`, `test`
-- [ ] Trivy or Checkov config scan
-- [ ] Image build
-- [ ] Image vulnerability scan
+- [x] PSScriptAnalyzer
+- [x] Pester
+- [x] `terraform fmt -check`, `validate`, `test`
+- [x] Trivy or Checkov config scan
+- [x] Image build
+- [x] Image vulnerability scan
 - [x] Decide what **fails** vs. what **warns**, and document why (put it in DESIGN.md)
-- [ ] Branch policy on `main` enforcing it (build validation + min reviewers + no direct push)
-- [ ] `Test-BranchCompliance` runs in the PR stage
+- [x] Branch policy on `main` enforcing it (build validation + min reviewers + no direct push) (reviewers: 0, one-person repo; see DECISIONS #65)
+- [x] `Test-BranchCompliance` runs in the PR stage
 
 ### Merge to main
-- [ ] Build **once**, tag with commit SHA (never only `latest`)
-- [ ] Deploy to `dev` (Compose project on the agent)
-- [ ] Smoke test: `/version` returns that SHA
+- [x] Build **once**, tag with commit SHA (never only `latest`)
+- [x] Deploy to `dev` (Compose project on the agent)
+- [x] Smoke test: `/version` returns that SHA
 
 ### Prod
-- [ ] Promote the **same image** (no rebuild) to `prod` (second Compose project, other port)
-- [ ] Azure DevOps **Environment** with an **approval check**
+- [x] Promote the **same image** (no rebuild) to `prod` (second Compose project, other port)
+- [x] Azure DevOps **Environment** with an **approval check**
 - [ ] Prod smoke test; on failure **auto-rollback** via `Invoke-Rollback`
-- [ ] `New-ReleaseAudit` output attached to every prod deploy as an artifact
+- [x] `New-ReleaseAudit` output attached to every prod deploy as an artifact
 
 ### Structure
 - [x] Stages/jobs from YAML **templates** reused by dev and prod
@@ -127,7 +127,7 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 - [x] **Secret scan**: no PATs, tokens, `.tfstate`, `.env` in repo or history
 - [x] Commit history is readable (small, meaningful commits)
 - [ ] You can explain every line of code (follow-up call walks through it)
-- [ ] GitHub repo and Azure DevOps project are both **public**
+- [ ] GitHub repo and Azure DevOps project are both **public** (GitHub public; Azure DevOps cannot be, see DECISIONS #64)
 - [ ] `docs/TIME.md`: time spent and what you skipped, plus what you would do next
 - [ ] Email **hello@hellovibe.in**, subject: `Take-home: DevOps Engineer (Cloud) - Sai Kaushik`
   - [ ] GitHub link + Azure DevOps link
