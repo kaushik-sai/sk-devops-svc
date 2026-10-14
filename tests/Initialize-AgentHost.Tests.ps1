@@ -107,7 +107,11 @@ Describe 'Initialize-AgentHost' {
         Initialize-AgentHost -Root $root -AgentAccount 'svc-azagent' -AgentDirectory $agent -InformationAction SilentlyContinue | Should -Be 0
         Should -Invoke Set-UserVariable -Times 1 -ParameterFilter { $Name -eq 'RELEASEGUARD_HOME' -and $Value -eq $root }
         Should -Invoke Set-UserVariable -Times 1 -ParameterFilter { $Name -eq 'SKSVC_DB_PASSWORD_FILE' -and $Value -like '*secrets*db_password' }
-        Test-Path -LiteralPath (Join-Path -Path $agent -ChildPath '.path') | Should -BeTrue
+        # PATH goes into .env (the agent does not read a .path file); the user variables stay two.
+        $envLines = Get-Content -LiteralPath (Join-Path -Path $agent -ChildPath '.env')
+        @($envLines | Where-Object { $_ -like 'PATH=*' }).Count | Should -Be 1
+        $envLines | Should -Contain "RELEASEGUARD_HOME=$root"
+        Should -Invoke Set-UserVariable -Times 0 -ParameterFilter { $Name -eq 'PATH' }
     }
 
     It 'reports a missing agent folder as a failure' {

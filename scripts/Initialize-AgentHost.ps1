@@ -13,11 +13,12 @@
       3. Sets permissions: the agent account may modify <Root>; <Root>\secrets is limited to
          SYSTEM, Administrators, you and the agent account. The agent account may read and run
          the tools folder and the Docker Desktop CLI.
-      4. Writes the agent's .env (RELEASEGUARD_HOME, SKSVC_DB_PASSWORD_FILE) and .path (your full
-         PATH) so pipeline jobs find the shared folder, pwsh, docker, terraform and the rest.
+      4. Writes the agent's .env: RELEASEGUARD_HOME, SKSVC_DB_PASSWORD_FILE and PATH (machine PATH plus
+         yours), so pipeline jobs find the shared folder, pwsh, docker, terraform and the rest. The agent
+         loads .env at startup; it does not read a .path file (checked with agent 5.280).
       5. Sets the same two variables for your own account, so your terminal and the pipeline
          share one history and one password.
-    Restart the agent service afterwards so it reads .env and .path.
+    Restart the agent service afterwards so it reads .env.
 
     In production the password would come from a vault (Azure Key Vault); see DESIGN.md.
 
@@ -186,19 +187,6 @@ function Set-AgentEnvironmentFile {
     }
 }
 
-function Set-AgentPathFile {
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $Value
-    )
-    if ($PSCmdlet.ShouldProcess($Path, 'Write agent PATH')) {
-        # The agent uses this file, one line, as PATH for every job.
-        Set-Content -LiteralPath $Path -Value $Value -NoNewline
-        Write-Information "Wrote $Path"
-    }
-}
-
 function Initialize-AgentHost {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([int])]
@@ -219,12 +207,13 @@ function Initialize-AgentHost {
 
     $variables = @{ RELEASEGUARD_HOME = $layout.Root; SKSVC_DB_PASSWORD_FILE = $layout.SecretFile }
     if (Test-Path -LiteralPath $AgentDirectory) {
-        Set-AgentEnvironmentFile -Path (Join-Path -Path $AgentDirectory -ChildPath '.env') -Values $variables
         # Machine PATH plus your user PATH: where pwsh 7, docker, terraform, trivy and promtool are.
-        $path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
-        Set-AgentPathFile -Path (Join-Path -Path $AgentDirectory -ChildPath '.path') -Value $path
+        # Only for the agent's own environment, not for your user variables.
+        $agentValues = $variables.Clone()
+        $agentValues['PATH'] = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+        Set-AgentEnvironmentFile -Path (Join-Path -Path $AgentDirectory -ChildPath '.env') -Values $agentValues
     } else {
-        Write-Warning "Agent folder not found, skipped .env and .path: $AgentDirectory"
+        Write-Warning "Agent folder not found, skipped .env: $AgentDirectory"
         $failures++
     }
     foreach ($name in $variables.Keys) {
@@ -245,6 +234,6 @@ if ($MyInvocation.InvocationName -ne '.') {
         Write-Error "$failed step(s) failed; see the warnings above." -ErrorAction Continue
         exit 1
     }
-    Write-Output "Done. Restart the agent service so it reads $AgentDirectory\.env and .path, and open a new terminal for the new variables."
+    Write-Output "Done. Restart the agent service so it reads $AgentDirectory\.env, and open a new terminal for the new variables."
     exit 0
 }
