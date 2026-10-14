@@ -1,0 +1,137 @@
+# Code checks shared by the PR pipeline (all checks) and the main pipeline (the cheap ones).
+# Every check fails the job on an error, except where a step says "warn only".
+# The fail/warn table and the reasons are in DESIGN.md.
+
+parameters:
+  # Pinned tool versions: every agent and every run uses the same ones.
+  - name: pesterVersion
+    type: string
+    default: '5.9.1'
+  - name: scriptAnalyzerVersion
+    type: string
+    default: '1.25.0'
+  - name: trivyImage
+    type: string
+    default: 'aquasec/trivy:0.75.0'
+  - name: runTerraform
+    type: boolean
+    default: true
+  - name: runTrivyConfig
+    type: boolean
+    default: true
+  - name: runMonitoringTests
+    type: boolean
+    default: true
+  # Branch policy check: only meaningful for a PR, where we know the source branch.
+  - name: runBranchCompliance
+    type: boolean
+    default: false
+  - name: branchName
+    type: string
+    default: ''
+
+steps:
+  - pwsh: |
+      # Install the pinned module versions for this user if they are missing.
+      $modules = @{ 'Pester' = '${{ parameters.pesterVersion }}'; 'PSScriptAnalyzer' = '${{ parameters.scriptAnalyzerVersion }}' }
+      foreach ($name in $modules.Keys) {
+          $version = $modules[$name]
+          if (-not (Get-Module -ListAvailable -Name $name | Where-Object { $_.Version -eq [version] $version })) {
+              Write-Output "Installing $name $version"
+              Install-Module -Name $name -RequiredVersion $version -Scope CurrentUser -Force -SkipPublisherCheck -Repository PSGallery
+          }
+      }
+    displayName: 'Tools: pinned Pester and PSScriptAnalyzer'
+
+  - pwsh: |
+      Import-Module PSScriptAnalyzer -RequiredVersion ${{ parameters.scriptAnalyzerVersion }}
+      $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+      $results | Format-Table Severity, RuleName, ScriptName, Line, Message -AutoSize -Wrap | Out-String -Width 200
+      # Information findings are shown but do not fail the build.
+      $blocking = @($results | Where-Object Severity -In 'Error', 'Warning', 'ParseError')
+      if ($blocking.Count -gt 0) {
+          Write-Output "##vso[task.logissue type=error]PSScriptAnalyzer: $($blocking.Count) error/warning finding(s)."
+          exit 1
+      }
+      Write-Output 'PSScriptAnalyzer: no errors or warnings.'
+    displayName: 'Lint: PSScriptAnalyzer'
+
+  - pwsh: |
+      Import-Module Pester -RequiredVersion ${{ parameters.pesterVersion }}
+      $config = New-PesterConfiguration
+      $config.Run.Path = './tests'
+      # Exit makes pwsh return a non-zero code when any test fails.
+      $config.Run.Exit = $true
+      $config.Output.Verbosity = 'Detailed'
+      $config.TestResult.Enabled = $true
+      $config.TestResult.OutputFormat = 'NUnitXml'
+      $config.TestResult.OutputPath = '$(Common.TestResultsDirectory)/pester.xml'
+      Invoke-Pester -Configuration $config
+    displayName: 'Test: Pester'
+
+  # Publish even when tests failed, so the failures show in the Tests tab.
+  - task: PublishTestResults@2
+    displayName: 'Publish Pester results'
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: NUnit
+      testResultsFiles: '$(Common.TestResultsDirectory)/pester.xml'
+      testRunTitle: 'Pester'
+      failTaskOnFailedTests: true
+
+  - ${{ if eq(parameters.runBranchCompliance, true) }}:
+    - pwsh: |
+        Import-Module ./modules/ReleaseGuard -Force
+        Test-BranchCompliance -RepoPath . -BranchName '${{ parameters.branchName }}'
+      displayName: 'Governance: Test-BranchCompliance'
+
+  - ${{ if eq(parameters.runTerraform, true) }}:
+    - pwsh: |
+        Set-Location ./terraform
+        terraform version
+        terraform fmt -check -recursive
+        if ($LASTEXITCODE -ne 0) { Write-Output '##vso[task.logissue type=error]terraform fmt: files need formatting.'; exit 1 }
+        terraform init -backend=false -input=false
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        terraform validate
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        foreach ($environment in @('dev', 'prod')) {
+            # Each environment's tests run with that environment's real tfvars.
+            $varFile = Join-Path -Path 'envs' -ChildPath "$environment.tfvars"
+            $testFile = Join-Path -Path 'tests' -ChildPath "$environment.tftest.hcl"
+            $output = terraform test "-var-file=$varFile" "-filter=$testFile" 2>&1 | Out-String
+            Write-Output $output
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            # Guard: a wrong -filter path makes terraform run 0 tests and still say "Success!".
+            if ($output -notmatch '[1-9]\d* passed, 0 failed') {
+                Write-Output "##vso[task.logissue type=error]terraform test ($environment) ran no tests."
+                exit 1
+            }
+        }
+      displayName: 'Terraform: fmt, validate, test'
+
+  - ${{ if eq(parameters.runTrivyConfig, true) }}:
+    - pwsh: |
+        # Trivy runs as a pinned container. The repo is mounted read-only; -w /src lets Trivy
+        # find .trivyignore. The named volume caches Trivy's check bundle between runs.
+        $common = @('run', '--rm', '-v', '$(Build.SourcesDirectory):/src:ro', '-w', '/src',
+            '-v', 'sksvc-trivy-cache:/root/.cache/trivy', '${{ parameters.trivyImage }}', 'config',
+            # Provider downloads from 'terraform init' are not our config.
+            '--skip-dirs', 'terraform/.terraform')
+
+        Write-Output '--- Warn only: LOW and MEDIUM findings ---'
+        docker @common --severity LOW,MEDIUM --exit-code 0 .
+
+        Write-Output '--- Fail: HIGH and CRITICAL findings ---'
+        docker @common --severity HIGH,CRITICAL --exit-code 1 .
+        if ($LASTEXITCODE -ne 0) {
+            Write-Output '##vso[task.logissue type=error]Trivy config scan found HIGH/CRITICAL misconfigurations.'
+            exit 1
+        }
+      displayName: 'Security: Trivy config scan (Terraform, Dockerfile)'
+
+  - ${{ if eq(parameters.runMonitoringTests, true) }}:
+    # Non-blocking: promtool may not be installed on every agent.
+    - pwsh: ./scripts/Test-Monitoring.ps1
+      displayName: 'Monitoring: promtool checks and rule tests (warn only)'
+      continueOnError: true
