@@ -34,6 +34,7 @@ RUN mkdir -p /usr/local/share/powershell/Modules \
 FROM ${BASE_IMAGE}
 
 # The commit SHA this image was built from. Becomes an env var (read by /version) and a label.
+# DB_PASSWORD_FILE is set by the runtime (Compose or Container Apps), not baked into the image.
 ARG GIT_SHA=unknown
 LABEL org.opencontainers.image.title="sk-svc" \
       org.opencontainers.image.revision="${GIT_SHA}"
@@ -41,7 +42,6 @@ LABEL org.opencontainers.image.title="sk-svc" \
 ENV GIT_SHA=${GIT_SHA} \
     PORT=8080 \
     FAIL_RATE=0 \
-    DB_PASSWORD_FILE=/run/secrets/db_password \
     POWERSHELL_TELEMETRY_OPTOUT=1 \
     NO_COLOR=1 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
