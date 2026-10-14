@@ -38,7 +38,14 @@ jobs:
           sha: $(Build.SourceVersion)
 
       # PR images are not deployed; remove the tag so the agent does not fill up.
-      - pwsh: docker image rm 'sk-svc:$(Build.SourceVersion)'
+      # Only if the build step got that far; otherwise there is nothing to remove.
+      - pwsh: |
+          $image = 'sk-svc:$(Build.SourceVersion)'
+          if (docker image ls --quiet $image) {
+              docker image rm $image
+          } else {
+              Write-Output "No $image on the agent; nothing to remove."
+          }
         displayName: 'Clean up: remove PR image'
         condition: always()
         continueOnError: true
