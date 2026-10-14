@@ -1,0 +1,50 @@
+# Builds the image once, tagged with the full commit SHA, and scans it for vulnerabilities.
+# Images stay local on the agent (no registry), so later stages use this exact image.
+
+parameters:
+  - name: sha
+    type: string
+  - name: trivyImage
+    type: string
+    default: 'aquasec/trivy:0.75.0'
+
+steps:
+  - pwsh: |
+      $tag = 'sk-svc:${{ parameters.sha }}'
+      docker build --build-arg 'GIT_SHA=${{ parameters.sha }}' -t $tag .
+      if ($LASTEXITCODE -ne 0) { exit 1 }
+      # The image must report the SHA it was built from.
+      $label = docker image inspect $tag --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+      if ($label -ne '${{ parameters.sha }}') {
+          Write-Output "##vso[task.logissue type=error]Image label is '$label', expected the commit SHA."
+          exit 1
+      }
+      Write-Output "Built $tag"
+    displayName: 'Build: image sk-svc:<commit SHA>'
+
+  - pwsh: |
+      # Scan a saved tar instead of asking Trivy to reach the Docker daemon: reliable on Windows.
+      $tar = Join-Path -Path '$(Agent.TempDirectory)' -ChildPath 'sk-svc.tar'
+      docker save 'sk-svc:${{ parameters.sha }}' -o $tar
+      if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      $common = @('run', '--rm', '-v', '$(Agent.TempDirectory):/scan:ro',
+          '-v', '$(Build.SourcesDirectory):/src:ro', '-w', '/src',
+          '-v', 'sksvc-trivy-cache:/root/.cache/trivy', '${{ parameters.trivyImage }}',
+          'image', '--input', '/scan/sk-svc.tar',
+          # Scoped, justified and expiring exceptions; see the comments in the file.
+          '--ignorefile', '/src/.trivyignore.yaml')
+      try {
+          Write-Output '--- Warn only: everything, including vulnerabilities with no fix yet ---'
+          docker @common --exit-code 0
+
+          Write-Output '--- Fail: HIGH and CRITICAL vulnerabilities that have a fix available ---'
+          docker @common --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          if ($LASTEXITCODE -ne 0) {
+              Write-Output '##vso[task.logissue type=error]Trivy found fixable HIGH/CRITICAL vulnerabilities in the image.'
+              exit 1
+          }
+      } finally {
+          Remove-Item -LiteralPath $tar -Force -ErrorAction SilentlyContinue
+      }
+    displayName: 'Security: Trivy image scan'
