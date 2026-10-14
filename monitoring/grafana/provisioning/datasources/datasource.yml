@@ -1,0 +1,16 @@
+# Grafana reads this at startup (/etc/grafana/provisioning/datasources).
+# Adds Prometheus as the default data source, so nothing is clicked by hand.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # Fixed uid so the dashboard JSON can point at this data source.
+    uid: prometheus
+    # "proxy": the Grafana server calls Prometheus, not the browser.
+    access: proxy
+    # Compose service name on the shared network sksvc-net.
+    url: http://prometheus:9090
+    isDefault: true
+    # Managed from this file only.
+    editable: false

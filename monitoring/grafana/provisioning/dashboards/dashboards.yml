@@ -1,0 +1,13 @@
+# Grafana reads this at startup (/etc/grafana/provisioning/dashboards).
+# It loads every dashboard JSON file from the mounted folder.
+apiVersion: 1
+
+providers:
+  - name: sk-svc
+    type: file
+    # Dashboards live in the repo; the UI cannot delete or overwrite them.
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      # monitoring/grafana/dashboards is mounted here by Compose.
+      path: /var/lib/grafana/dashboards
