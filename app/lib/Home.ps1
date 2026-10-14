@@ -1,7 +1,9 @@
 # The page served at GET /: service name, running version and the endpoints.
 # Plain function with no Pode dependency, so Pester can test it directly.
-
-Set-StrictMode -Version Latest
+#
+# No Set-StrictMode here, unlike the other lib files: Use-PodeScript loads this file inside
+# Pode's own loader, and with only one function in the file Pode reads .Length on a single
+# value, which strict mode turns into an error and the server does not start.
 
 <#
 .SYNOPSIS
