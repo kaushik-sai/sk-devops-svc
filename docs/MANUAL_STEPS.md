@@ -11,7 +11,7 @@ These steps need your accounts and the web UIs. Do them after the build is finis
 ## B. Azure DevOps
 
 1. Sign in at dev.azure.com with a personal Microsoft account and create a free **organization**. No Azure subscription or card is needed.
-2. Create a **public** project. If public projects are unavailable, check Organization settings, Policies, and the "Allow public projects" setting.
+2. Create a project (private: Microsoft has retired public Azure DevOps projects). Give reviewers read access by adding them under Organization settings, Users (access level Basic, project group Project Readers).
 3. Create a **PAT** with the scope *Agent Pools: Read & manage*, short expiry (a few days). It is only for registering the agent. **Never commit it or paste it into chat.**
 4. Create an agent pool named `sk-local` (Organization settings, Agent pools; make it self-hosted).
 5. Download the Windows agent from the pool (New agent), unzip it to `C:\agent`, and register it with `config.cmd` (URL of your org, auth type PAT, pool `sk-local`), as a service.
