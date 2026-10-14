@@ -202,6 +202,6 @@ Everything listed in [VERIFY_LOCALLY.md](VERIFY_LOCALLY.md) under "Verified" was
 - The rollback drill with images from two real commits.
 - The live alert drill (pending at about 1 minute, firing at about 3).
 - Each pipeline step body executed locally.
-- 175 Pester tests, lint, Terraform, promtool and Trivy.
+- 194 Pester tests, lint, Terraform, promtool and Trivy.
 
 The remaining items need the Azure DevOps agent and GitHub settings ([MANUAL_STEPS.md](MANUAL_STEPS.md)).

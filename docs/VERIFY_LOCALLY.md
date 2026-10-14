@@ -7,14 +7,14 @@ The build machine was a Windows 11 laptop with Docker Desktop running (full mode
 | Check | How | Result |
 |---|---|---|
 | Lint | `Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1` | 0 findings |
-| Unit tests | `Invoke-Pester -Path ./tests` | 175 passed, 0 failed |
+| Unit tests | `Invoke-Pester -Path ./tests` | 194 passed, 0 failed |
 | Terraform | `fmt -check`, `init -backend=false`, `validate`, `test` with dev and prod tfvars | all pass, 2 + 2 runs |
 | Alert rules | `scripts/Test-Monitoring.ps1` (promtool check config, check rules, test rules) | all pass |
 | Alertmanager config | `amtool check-config monitoring/alertmanager.yml` | pass |
 | YAML / JSON | Parsed all 13 YAML files and the dashboard JSON; checked every pipeline template path and parameter name | 0 errors |
 | Image | `docker build`, non-root user (`id` shows uid 1654 `app`), `/version` returns the SHA, `/healthz` ok with `secret_loaded: true`, `/metrics` shows the three metrics, `FAIL_RATE=1` makes `/work` return 500 | as expected |
 | Trivy | Config scan of Terraform and Dockerfile: 0 HIGH/CRITICAL. Image scan: 0 fixable HIGH/CRITICAL after the scoped exceptions in `.trivyignore.yaml` | gate passes |
-| Pipeline steps | Every `pwsh` step of `checks.yml`, `build.yml` and the prod audit step of `main.yml` executed locally, with pipeline variables replaced by local paths | pass |
+| Pipeline steps | Every `pwsh` step of `checks.yml`, `build.yml` and the prod audit step of `main.yml` executed locally, with pipeline variables replaced by local paths. A simulated agent job from a fresh clone (no `.secrets`) with the agent's `.env` and `.path`: build, prepare, deploy dev and prod, smoke tests, image clean-up | pass |
 | Bring-up / tear-down | `Stop-Stack.ps1 -Purge` (twice), then `Start-Stack.ps1` (twice) from a clean state | up; second run reuses everything and adds no history entries |
 | Migrations | Against `sksvc-db`: first run applies 2 files, second run applies nothing; wrong password fails | as expected |
 | Rollback drill | Deploy A (image built from the previous commit), deploy B with `FAIL_RATE=0.5`, smoke test fails, `Invoke-Rollback -Environment prod`, `/version` shows A, run it again | rolled back; second run "Already rolled back", no docker call |
