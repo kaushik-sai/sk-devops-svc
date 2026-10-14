@@ -1,0 +1,147 @@
+# sk-svc-main: runs on every merge to main.
+# Build once (image tagged with the full commit SHA) -> Dev -> Prod (approval), same image throughout.
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr: none
+
+# Queue-time parameter for the evidence run: makes prod (only prod) return 5xx on /work,
+# so the prod smoke test fails and the automatic rollback runs. Dev always deploys with 0.
+parameters:
+  - name: prodFailRate
+    displayName: 'Prod FAIL_RATE (0 = healthy; 1 = deliberately bad prod release)'
+    type: string
+    default: '0'
+    values: ['0', '0.33', '0.5', '1']
+
+# With an exclusive lock check on sk-svc-prod, runs wait for each other instead of deploying at once.
+lockBehavior: sequential
+
+pool:
+  name: sk-local
+  demands:
+    - Agent.OS -equals Windows_NT
+
+variables:
+  # The full 40-character commit SHA: the image tag, the /version value and the history entry.
+  sha: $(Build.SourceVersion)
+
+stages:
+  - stage: Build
+    displayName: 'Build and scan'
+    jobs:
+      - job: Build
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            fetchTags: true
+            clean: true
+
+          # Lint and unit tests again (cheap). Terraform and the config scan are skipped: the merged
+          # code is identical to the PR that already passed them (squash merge, branch up to date).
+          - template: templates/checks.yml
+            parameters:
+              runTerraform: false
+              runTrivyConfig: false
+              runMonitoringTests: false
+
+          # The image is built exactly once, here, and scanned again (new CVEs appear every day).
+          - template: templates/build.yml
+            parameters:
+              sha: $(sha)
+
+  - stage: Dev
+    displayName: 'Deploy to dev'
+    dependsOn: Build
+    jobs:
+      - deployment: DeployDev
+        displayName: 'Dev: deploy and smoke test'
+        environment: sk-svc-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+                - template: templates/deploy.yml
+                  parameters:
+                    environment: dev
+                    composeProject: sksvc-dev
+                    sha: $(sha)
+                    failRate: '0'
+                - template: templates/smoke.yml
+                  parameters:
+                    environment: dev
+                    port: 7311
+                    sha: $(sha)
+
+  - stage: Prod
+    displayName: 'Deploy to prod'
+    dependsOn: Dev
+    jobs:
+      # The approval check on the sk-svc-prod environment pauses the run here.
+      - deployment: DeployProd
+        displayName: 'Prod: audit, deploy, smoke test, auto-rollback'
+        environment: sk-svc-prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 0
+                  fetchTags: true
+                  clean: true
+
+                # Release audit: commits from the last release deployed to prod up to this SHA.
+                - pwsh: |
+                    . ./modules/ReleaseGuard/Private/History.ps1
+                    Import-Module ./modules/ReleaseGuard -Force
+                    $outDir = Join-Path -Path '$(Build.ArtifactStagingDirectory)' -ChildPath 'release-audit'
+                    $auditArgs = @{
+                        To           = '$(sha)'
+                        ImageTag     = 'sk-svc:$(sha)'
+                        ChecksPassed = @('lint', 'pester', 'image-build', 'trivy-image', 'dev-deploy', 'dev-smoke')
+                        OutputDir    = $outDir
+                        RepoPath     = '.'
+                    }
+                    # The last successfully deployed prod release; none yet means "from the first commit".
+                    # Assign first: Read-DeployHistory returns the array as one object (so it never unrolls).
+                    $history = Read-DeployHistory -Environment prod
+                    $deployed = @($history | Where-Object { $_.status -eq 'deployed' })
+                    if ($deployed.Count -gt 0) {
+                        $auditArgs.From = $deployed[-1].tag
+                    }
+                    Write-Output "Audit range: $(if ($auditArgs.From) { $auditArgs.From } else { '(first commit)' })..$(sha)"
+                    New-ReleaseAudit @auditArgs | Out-Null
+                    Get-ChildItem -Path $outDir | ForEach-Object { Get-Content -Path $_.FullName -Raw }
+                  displayName: 'Audit: New-ReleaseAudit'
+
+                - publish: $(Build.ArtifactStagingDirectory)/release-audit
+                  artifact: release-audit-prod
+                  displayName: 'Publish release audit artifact'
+
+                - template: templates/deploy.yml
+                  parameters:
+                    environment: prod
+                    composeProject: sksvc-prod
+                    sha: $(sha)
+                    failRate: ${{ parameters.prodFailRate }}
+
+                - template: templates/smoke.yml
+                  parameters:
+                    environment: prod
+                    port: 7312
+                    sha: $(sha)
+
+                # Self-healing: only when a step failed AFTER the prod deploy started
+                # (a failed audit must not roll back a healthy prod). The run still ends red.
+                - pwsh: |
+                    Import-Module ./modules/ReleaseGuard -Force
+                    Invoke-Rollback -Environment prod | Format-List
+                    Write-Output "Prod now runs: $((Invoke-RestMethod http://127.0.0.1:7312/version).version)"
+                  displayName: 'Rollback: Invoke-Rollback -Environment prod'
+                  condition: and(failed(), eq(variables['deployStarted'], 'true'))
