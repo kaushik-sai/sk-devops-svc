@@ -66,7 +66,7 @@ It is safe to run again.
 
 All ports are bound to `127.0.0.1`. Postgres publishes no port.
 
-- The service has no page at `/` (a 404 there is expected); it answers `/healthz`, `/version`, `/work` and `/metrics`.
+- Opening a service port shows a small HelloVibe page with the service name, the running version and links to `/healthz`, `/version`, `/work` and `/metrics`.
 - Grafana has no login on purpose (no password in the repo): open the dashboard link; "Sign in" returns Unauthorized.
 - Alertmanager showing "No alert groups found" means nothing is firing. Run the alert demo below to see one.
 
