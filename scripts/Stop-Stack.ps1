@@ -53,13 +53,15 @@ function Invoke-StackCommand {
     return $LASTEXITCODE
 }
 
-# Same rule as ReleaseGuard: RELEASEGUARD_HOME if set, otherwise ~/.releaseguard.
+# ReleaseGuard's history helpers: the one definition of where deploy history lives.
+. (Join-Path -Path $script:RepoRoot -ChildPath 'modules' -AdditionalChildPath 'ReleaseGuard', 'Private', 'History.ps1')
+
+# The folder that holds <env>.json for every environment.
 function Get-HistoryFolder {
     [CmdletBinding()]
     [OutputType([string])]
     param()
-    $base = if ($env:RELEASEGUARD_HOME) { $env:RELEASEGUARD_HOME } else { Join-Path -Path $HOME -ChildPath '.releaseguard' }
-    return Join-Path -Path $base -ChildPath 'history'
+    return Split-Path -Path (Get-DeployHistoryPath -Environment 'dev') -Parent
 }
 
 function Stop-Stack {
