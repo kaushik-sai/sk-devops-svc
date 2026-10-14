@@ -50,16 +50,16 @@ Running `Invoke-Rollback -Environment prod` a second time returned `AlreadyRolle
 
 ## Alert firing
 
-Alert drill: prod set to `FAIL_RATE=0.33`, with `scripts/Send-Traffic.ps1` sending 2 requests per second. `ProdHighErrorRate` went **pending** after about 1 minute and **firing** after about 3 minutes.
+Alert drill on the current release (`c3e1af4`): prod set to `FAIL_RATE=0.33`, with `scripts/Send-Traffic.ps1` sending 2 requests per second. `ProdHighErrorRate` went **pending** after about 1 minute and **firing** after about 3 minutes.
 
-- Prometheus: the rule firing, showing its expression, `for: 2m`, `severity="page"`, the runbook link and an error ratio of 0.29.
+**Prometheus**: the rule firing, with its expression, `for: 2m`, `severity="page"`, the runbook link, and an error ratio of 0.32.
 
-  ![Prometheus alert firing](evidence/alert-firing-prometheus.jpg)
+![Prometheus: ProdHighErrorRate firing](evidence/alert-firing-prometheus.png)
 
-- Alertmanager: the alert received, with `severity="page"`.
+**Alertmanager**: the alert received, with `severity="page"`. The description reads "31.55% of sk-svc prod requests returned 5xx".
 
-  ![Alertmanager alert](evidence/alert-firing-alertmanager.jpg)
+![Alertmanager: ProdHighErrorRate with its annotations](evidence/alert-firing-alertmanager.png)
 
-- Grafana: the prod 5xx ratio at about 30%, above the 5% line. Both environments show the running version.
+**Grafana**: prod's 5xx ratio climbs to about 32%, above the red 5% line, while dev stays at 0%. Both environments run `c3e1af4`.
 
-  ![Grafana dashboard during the drill](evidence/alert-firing-grafana.jpg)
+![Grafana: request rate, 5xx ratio, p95 latency and running version during the drill](evidence/alert-firing-grafana.png)
