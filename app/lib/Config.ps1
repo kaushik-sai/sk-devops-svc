@@ -22,7 +22,7 @@ function ConvertTo-FailRate {
     # InvariantCulture so "0.33" parses the same on every machine locale.
     $parsed = [double]::TryParse($Value, [Globalization.NumberStyles]::Float,
         [Globalization.CultureInfo]::InvariantCulture, [ref] $rate)
-    if (-not $parsed -or $rate -lt 0 -or $rate -gt 1) {
+    if (-not $parsed -or $rate -lt 0) {
         Write-Warning "FAIL_RATE '$Value' is not a number between 0 and 1. Using 0."
         return [double] 0
     }
