@@ -85,6 +85,32 @@ Describe 'Set-AgentEnvironmentFile' {
     }
 }
 
+Describe 'Set-AgentDockerConfig' {
+    It 'points the Docker CLI at the plugin folder so the agent has docker compose' {
+        $plugins = Join-Path -Path $TestDrive -ChildPath 'cli-plugins'
+        New-Item -ItemType Directory -Path $plugins -Force | Out-Null
+        $path = Join-Path -Path $TestDrive -ChildPath 'config-new.json'
+        Set-AgentDockerConfig -Path $path -PluginDirectory $plugins -InformationAction SilentlyContinue
+        (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).cliPluginsExtraDirs | Should -Be @($plugins)
+    }
+
+    It 'keeps other settings already in the file' {
+        $path = Join-Path -Path $TestDrive -ChildPath 'config-existing.json'
+        Set-Content -LiteralPath $path -Value '{ "detachKeys": "ctrl-x" }'
+        Set-AgentDockerConfig -Path $path -PluginDirectory $TestDrive -InformationAction SilentlyContinue
+        $config = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        $config.detachKeys | Should -Be 'ctrl-x'
+        $config.cliPluginsExtraDirs | Should -Be @($TestDrive)
+    }
+
+    It 'warns when the plugin folder does not exist' {
+        $path = Join-Path -Path $TestDrive -ChildPath 'config-warn.json'
+        Set-AgentDockerConfig -Path $path -PluginDirectory (Join-Path -Path $TestDrive -ChildPath 'missing') `
+            -WarningVariable warnings -WarningAction SilentlyContinue -InformationAction SilentlyContinue
+        $warnings | Should -Not -BeNullOrEmpty
+    }
+}
+
 Describe 'Initialize-AgentHost' {
     It 'with -WhatIf changes nothing' {
         Mock Invoke-AclCommand { [pscustomobject] @{ ExitCode = 0; Output = '' } }
@@ -104,7 +130,14 @@ Describe 'Initialize-AgentHost' {
         $root = Join-Path -Path $TestDrive -ChildPath 'real-root'
         $agent = Join-Path -Path $TestDrive -ChildPath 'agent2'
         New-Item -ItemType Directory -Path $agent | Out-Null
-        Initialize-AgentHost -Root $root -AgentAccount 'svc-azagent' -AgentDirectory $agent -InformationAction SilentlyContinue | Should -Be 0
+        $plugins = Join-Path -Path $TestDrive -ChildPath 'plugins'
+        New-Item -ItemType Directory -Path $plugins -Force | Out-Null
+        Initialize-AgentHost -Root $root -AgentAccount 'svc-azagent' -AgentDirectory $agent `
+            -DockerPluginDirectory $plugins -InformationAction SilentlyContinue | Should -Be 0
+        # The agent gets its own Docker settings, found through DOCKER_CONFIG in .env.
+        $dockerDir = Join-Path -Path $root -ChildPath 'docker'
+        Test-Path -LiteralPath (Join-Path -Path $dockerDir -ChildPath 'config.json') | Should -BeTrue
+        Get-Content -LiteralPath (Join-Path -Path $agent -ChildPath '.env') | Should -Contain "DOCKER_CONFIG=$dockerDir"
         Should -Invoke Set-UserVariable -Times 1 -ParameterFilter { $Name -eq 'RELEASEGUARD_HOME' -and $Value -eq $root }
         Should -Invoke Set-UserVariable -Times 1 -ParameterFilter { $Name -eq 'SKSVC_DB_PASSWORD_FILE' -and $Value -like '*secrets*db_password' }
         # PATH goes into .env (the agent does not read a .path file); the user variables stay two.
