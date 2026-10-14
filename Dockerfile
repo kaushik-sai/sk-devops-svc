@@ -28,7 +28,11 @@ RUN apk add --no-cache curl \
 # Save-PSResource (PSResourceGet) ships with pwsh 7.4+; the older Save-Module does not load on this base.
 RUN mkdir -p /usr/local/share/powershell/Modules \
     && /opt/microsoft/powershell/pwsh -NoLogo -NoProfile -Command \
-    "Save-PSResource -Name Pode -Version ${PODE_VERSION} -Path /usr/local/share/powershell/Modules -Repository PSGallery -TrustRepository -ErrorAction Stop"
+    "Save-PSResource -Name Pode -Version ${PODE_VERSION} -Path /usr/local/share/powershell/Modules -Repository PSGallery -TrustRepository -ErrorAction Stop" \
+    # Pode ships one library folder per .NET version and loads the one matching the runtime.
+    # pwsh 7.6 runs on .NET 10, so only Libs/net10.0 is ever used. The others are dead weight,
+    # and the netstandard2.0 one carries an old System.Security.Cryptography.Pkcs that Trivy flags.
+    && find /usr/local/share/powershell/Modules/Pode/${PODE_VERSION}/Libs -mindepth 1 -maxdepth 1 -type d ! -name net10.0 -exec rm -rf {} +
 
 # ---- Stage 2: runtime ----
 FROM ${BASE_IMAGE}
@@ -46,9 +50,11 @@ ENV GIT_SHA=${GIT_SHA} \
     NO_COLOR=1 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
-# Pode loads culture-specific message files, which needs ICU. The base image runs .NET in
-# "invariant globalization" mode without ICU, so we add icu-libs and switch that mode off (above).
-RUN apk add --no-cache icu-libs
+# apk upgrade: pick up Alpine security fixes released after the base image was built.
+# icu-libs: Pode loads culture-specific message files, which needs ICU. The base image runs .NET
+# in "invariant globalization" mode without ICU, so we add it and switch that mode off (above).
+RUN apk upgrade --no-cache \
+    && apk add --no-cache icu-libs
 
 COPY --from=build /opt/microsoft/powershell /opt/microsoft/powershell
 COPY --from=build /usr/local/share/powershell/Modules /usr/local/share/powershell/Modules
