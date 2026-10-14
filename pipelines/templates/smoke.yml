@@ -1,0 +1,17 @@
+# Smoke test for one environment: /healthz ok, /version equals the SHA, and a batch of
+# /work requests all return 200 (catches a bad release such as a high FAIL_RATE).
+
+parameters:
+  - name: environment
+    type: string
+  - name: port
+    type: number
+  - name: sha
+    type: string
+  - name: requests
+    type: number
+    default: 20
+
+steps:
+  - pwsh: ./scripts/Test-Smoke.ps1 -BaseUrl 'http://127.0.0.1:${{ parameters.port }}' -ExpectedSha '${{ parameters.sha }}' -Requests ${{ parameters.requests }}
+    displayName: 'Smoke test: ${{ parameters.environment }}'

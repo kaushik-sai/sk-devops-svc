@@ -1,0 +1,29 @@
+# Deploys the already-built image sk-svc:<sha> to one environment with scripts/Invoke-Deploy.ps1:
+# migrations first, then docker compose up in the environment's own project, then a health wait,
+# then a "deployed" entry in the deploy history. Nothing is rebuilt here.
+
+parameters:
+  - name: environment
+    type: string
+    values: [dev, prod]
+  - name: composeProject
+    type: string
+  - name: sha
+    type: string
+  - name: failRate
+    type: string
+    default: '0'
+
+steps:
+  - pwsh: |
+      # Tells a later rollback step that this environment may have changed.
+      Write-Output '##vso[task.setvariable variable=deployStarted]true'
+      ./scripts/Invoke-Deploy.ps1 -Environment '${{ parameters.environment }}' -ImageTag '${{ parameters.sha }}' -FailRate ${{ parameters.failRate }}
+    displayName: 'Deploy: sk-svc:<sha> to ${{ parameters.environment }} (FAIL_RATE=${{ parameters.failRate }})'
+
+  - pwsh: |
+      # Show what is running in the project, for the run log.
+      docker compose -p '${{ parameters.composeProject }}' ps
+    displayName: 'Show: ${{ parameters.composeProject }} containers'
+    condition: always()
+    continueOnError: true
