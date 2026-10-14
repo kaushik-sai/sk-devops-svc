@@ -35,7 +35,7 @@ The app only knows `DB_PASSWORD_FILE`, so the code is identical in both places.
 | Trivy image | HIGH, CRITICAL **with a fix** | lower severities, unfixed CVEs | Fail on what the team can act on. Exceptions live in `.trivyignore.yaml`: one file path each, a reason, and an expiry date |
 | promtool rule tests | | yes (non-blocking) | promtool may be missing on an agent |
 
-Trivy has no Compose scanner; the Compose file is hardened by hand (no capabilities, `no-new-privileges`, localhost-only ports, no DB port).
+On GitHub, `main` accepts changes only through a pull request, squash-merged, with `sk-svc-pr` passing; required reviewers are 0 only because this is a one-person repository (an author cannot approve their own PR). Trivy has no Compose scanner; the Compose file is hardened by hand (no capabilities, `no-new-privileges`, localhost-only ports, no DB port).
 
 ## Branching and promotion
 
