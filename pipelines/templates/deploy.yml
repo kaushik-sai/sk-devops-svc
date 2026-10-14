@@ -15,6 +15,12 @@ parameters:
     default: '0'
 
 steps:
+  # The checkout is fresh, so make sure the shared network, the database password
+  # (SKSVC_DB_PASSWORD_FILE, set by scripts/Initialize-AgentHost.ps1) and Postgres are there.
+  # Idempotent: when they already exist this changes nothing.
+  - pwsh: ./scripts/Start-Stack.ps1 -DataOnly
+    displayName: 'Prepare: network, database password, Postgres'
+
   - pwsh: |
       # Tells a later rollback step that this environment may have changed.
       Write-Output '##vso[task.setvariable variable=deployStarted]true'
