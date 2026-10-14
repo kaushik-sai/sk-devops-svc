@@ -7,7 +7,7 @@ The build machine was a Windows 11 laptop with Docker Desktop running (full mode
 | Check | How | Result |
 |---|---|---|
 | Lint | `Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1` | 0 findings |
-| Unit tests | `Invoke-Pester -Path ./tests` | 168 passed, 0 failed |
+| Unit tests | `Invoke-Pester -Path ./tests` | 175 passed, 0 failed |
 | Terraform | `fmt -check`, `init -backend=false`, `validate`, `test` with dev and prod tfvars | all pass, 2 + 2 runs |
 | Alert rules | `scripts/Test-Monitoring.ps1` (promtool check config, check rules, test rules) | all pass |
 | Alertmanager config | `amtool check-config monitoring/alertmanager.yml` | pass |

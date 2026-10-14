@@ -98,3 +98,5 @@ Ambiguities and the call made, one line each.
 | 55 | Runbook link in the alert | Annotation `runbook: RUNBOOK.md` | No public repo URL to point at yet |
 | 56 | Dashboard for two environments | One line per environment (`sum by (job)`); the 5xx panel shows 0% instead of "No data" | Dev and prod side by side, no template variables |
 | 57 | Grafana auth | Anonymous Viewer, login form and basic auth disabled, localhost-only port | No password committed; the built-in admin account cannot be used |
+| 58 | Separate `dev` branch? | No: trunk-based, `main` only; dev and prod are pipeline stages that receive the same `sk-svc:<sha>` image. A `dev` integration branch (cherry-pick release-ready commits to `main`) is the documented next step if unrelated changes must ship independently | One branch keeps promotion simple and guarantees prod runs exactly what dev tested |
+| 59 | Old images on the agent | `scripts/Remove-OldImages.ps1` runs after a successful prod deploy and keeps the last 3 deployed releases per environment plus any image a container uses | Every merge adds about 330 MB; rollback targets must never be deleted |
