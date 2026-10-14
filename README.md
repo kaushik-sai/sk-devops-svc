@@ -61,10 +61,14 @@ It is safe to run again.
 | dev | http://127.0.0.1:7311/version |
 | prod | http://127.0.0.1:7312/version |
 | Prometheus | http://127.0.0.1:7390 |
-| Grafana (anonymous, read-only) | http://127.0.0.1:7391 |
+| Grafana dashboard (anonymous, read-only) | http://127.0.0.1:7391/d/sk-svc |
 | Alertmanager | http://127.0.0.1:7393 |
 
 All ports are bound to `127.0.0.1`. Postgres publishes no port.
+
+- The service has no page at `/` (a 404 there is expected); it answers `/healthz`, `/version`, `/work` and `/metrics`.
+- Grafana has no login on purpose (no password in the repo): open the dashboard link; "Sign in" returns Unauthorized.
+- Alertmanager showing "No alert groups found" means nothing is firing. Run the alert demo below to see one.
 
 ## Tear down (one command)
 
