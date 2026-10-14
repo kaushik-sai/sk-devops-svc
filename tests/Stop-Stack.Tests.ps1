@@ -1,12 +1,20 @@
 BeforeAll {
     . (Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'scripts', 'Stop-Stack.ps1')
+
+    # What the docker wrapper returns: an exit code and the output lines.
+    function Get-FakeResult {
+        param([int] $ExitCode = 0, [string[]] $Output = @())
+        [pscustomobject] @{ ExitCode = $ExitCode; Output = $Output }
+    }
 }
 
 Describe 'Stop-Stack' {
     BeforeEach {
         $script:savedHome = $env:RELEASEGUARD_HOME
         $env:RELEASEGUARD_HOME = Join-Path -Path $TestDrive -ChildPath 'rg'
-        Mock Invoke-StackCommand { 0 }
+        Mock Invoke-StackCommand { Get-FakeResult }
+        # By default the network exists.
+        Mock Invoke-StackCommand { Get-FakeResult -Output @('sksvc-net') } -ParameterFilter { $Arguments[1] -eq 'ls' }
     }
     AfterEach {
         $env:RELEASEGUARD_HOME = $script:savedHome
@@ -30,7 +38,7 @@ Describe 'Stop-Stack' {
     }
 
     It 'skips removing the network when it is already gone' {
-        Mock Invoke-StackCommand { 1 } -ParameterFilter { $Arguments[1] -eq 'inspect' }
+        Mock Invoke-StackCommand { Get-FakeResult -Output @() } -ParameterFilter { $Arguments[1] -eq 'ls' }
         Stop-Stack | Should -Be 0
         Should -Invoke Invoke-StackCommand -Times 0 -ParameterFilter { $Arguments[1] -eq 'rm' }
     }
@@ -46,14 +54,14 @@ Describe 'Stop-Stack' {
     }
 
     It 'keeps going and reports a count when a step fails' {
-        Mock Invoke-StackCommand { 1 } -ParameterFilter { $Arguments -contains 'sksvc-dev' }
+        Mock Invoke-StackCommand { Get-FakeResult -ExitCode 1 } -ParameterFilter { $Arguments -contains 'sksvc-dev' }
         Stop-Stack | Should -Be 1
         Should -Invoke Invoke-StackCommand -Times 1 -ParameterFilter { $Arguments -contains 'sksvc-data' }
     }
 }
 
 Describe 'Get-HistoryFolder' {
-    It 'uses RELEASEGUARD_HOME when set' {
+    It 'uses RELEASEGUARD_HOME when set (same rule as ReleaseGuard)' {
         $saved = $env:RELEASEGUARD_HOME
         try {
             $env:RELEASEGUARD_HOME = Join-Path -Path $TestDrive -ChildPath 'custom'

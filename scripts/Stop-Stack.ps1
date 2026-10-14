@@ -39,7 +39,7 @@ $script:Projects = [ordered] @{
 }
 
 # The one place that runs docker. Tests mock this function.
-# Returns the exit code instead of throwing: tear-down keeps going even if one step fails.
+# Returns ExitCode and Output instead of throwing: tear-down keeps going even if one step fails.
 function Invoke-StackCommand {
     [CmdletBinding()]
     param(
@@ -47,10 +47,11 @@ function Invoke-StackCommand {
         [string[]] $Arguments = @()
     )
     $output = & $Command @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "'$Command $($Arguments -join ' ')' exited $LASTEXITCODE`: $($output | Out-String)"
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        Write-Warning "'$Command $($Arguments -join ' ')' exited $exitCode`: $($output | Out-String)"
     }
-    return $LASTEXITCODE
+    return [pscustomobject] @{ ExitCode = $exitCode; Output = @($output) }
 }
 
 # ReleaseGuard's history helpers: the one definition of where deploy history lives.
@@ -78,7 +79,7 @@ function Stop-Stack {
             $arguments += '-v'
         }
         if ($PSCmdlet.ShouldProcess($project, 'docker compose down')) {
-            if ((Invoke-StackCommand -Command 'docker' -Arguments $arguments) -ne 0) {
+            if ((Invoke-StackCommand -Command 'docker' -Arguments $arguments).ExitCode -ne 0) {
                 $failures++
             }
         }
@@ -86,8 +87,10 @@ function Stop-Stack {
 
     # Remove the network only if it exists, so a second run is quiet and still succeeds.
     if ($PSCmdlet.ShouldProcess($script:NetworkName, 'Remove Docker network')) {
-        $exists = (Invoke-StackCommand -Command 'docker' -Arguments @('network', 'inspect', $script:NetworkName)) -eq 0
-        if ($exists -and (Invoke-StackCommand -Command 'docker' -Arguments @('network', 'rm', $script:NetworkName)) -ne 0) {
+        # "network ls" with a filter prints the name only if it exists, and does not fail when it is missing.
+        $list = Invoke-StackCommand -Command 'docker' -Arguments @('network', 'ls', '--filter', "name=^$($script:NetworkName)$", '--format', '{{.Name}}')
+        $exists = $list.Output -contains $script:NetworkName
+        if ($exists -and (Invoke-StackCommand -Command 'docker' -Arguments @('network', 'rm', $script:NetworkName)).ExitCode -ne 0) {
             $failures++
         }
     }
