@@ -3,6 +3,8 @@
 Budget: 6-8 hours of work. Due 72 hours after receipt. Stop at 8 hours and write down what you would do next.
 Commit as you go. They read the history.
 
+Ticked = verified on the build machine. Items that need the Azure DevOps agent, GitHub settings or a screenshot stay open until done; see [docs/VERIFY_LOCALLY.md](docs/VERIFY_LOCALLY.md).
+
 Scoring: Pipeline 30 | PowerShell 25 | Container + Terraform 20 | Operations 15 | Writing 10
 
 ---
@@ -11,58 +13,58 @@ Scoring: Pipeline 30 | PowerShell 25 | Container + Terraform 20 | Operations 15 
 
 - [ ] Create public GitHub repo and push this scaffold
 - [ ] Create free Azure DevOps org + **public** project
-- [ ] Install: PowerShell 7, Pester 5, PSScriptAnalyzer, Git
-- [ ] Install: Docker Desktop / Rancher Desktop / Colima + Docker Compose
-- [ ] Install: Terraform 1.7+ (or OpenTofu), Trivy (or Checkov)
+- [x] Install: PowerShell 7, Pester 5, PSScriptAnalyzer, Git
+- [x] Install: Docker Desktop / Rancher Desktop / Colima + Docker Compose
+- [x] Install: Terraform 1.7+ (or OpenTofu), Trivy (or Checkov)
 - [ ] Create PAT (Agent Pools: Read & manage) for agent registration only. **Never commit it.**
 - [ ] Register self-hosted agent on laptop (script it in `scripts/`)
-- [ ] Decide and note: registry = Docker Hub / GHCR / local on agent
+- [x] Decide and note: registry = Docker Hub / GHCR / local on agent
 - [ ] Start a time log in `docs/TIME.md`
 
 ## Part 3: Service, container, Terraform (~2 hrs). Build this first; Parts 1 and 2 depend on it
 
 ### Service
-- [ ] Tiny HTTP service (any language; PowerShell + Pode is fine) in `app/`
-- [ ] `GET /healthz`
-- [ ] `GET /version` returns the Git commit SHA it was built from
-- [ ] `GET /metrics` in Prometheus format (request count, errors by status class)
+- [x] Tiny HTTP service (any language; PowerShell + Pode is fine) in `app/`
+- [x] `GET /healthz`
+- [x] `GET /version` returns the Git commit SHA it was built from
+- [x] `GET /metrics` in Prometheus format (request count, errors by status class)
 
 ### Container
-- [ ] Multi-stage Dockerfile, **non-root user**, small final image
-- [ ] SHA passed as build arg and baked into the image
-- [ ] `docker-compose.yml`: `dev` and `prod` from one file, different ports, health checks
+- [x] Multi-stage Dockerfile, **non-root user**, small final image
+- [x] SHA passed as build arg and baked into the image
+- [x] `docker-compose.yml`: `dev` and `prod` from one file, different ports, health checks
 
 ### Terraform (never applied)
-- [ ] One module: Container Apps environment + app
-- [ ] User-assigned managed identity
-- [ ] Key Vault, app reads one secret
-- [ ] `dev.tfvars` and `prod.tfvars` from the same module
-- [ ] Prod: 2 replicas + purge protection
-- [ ] `terraform test` with `mock_provider "azurerm"`, **at least 3 assertions** (e.g. prod replica count)
-- [ ] Note what you would add before a real apply (remote state, RBAC, networking, etc.)
+- [x] One module: Container Apps environment + app
+- [x] User-assigned managed identity
+- [x] Key Vault, app reads one secret
+- [x] `dev.tfvars` and `prod.tfvars` from the same module
+- [x] Prod: 2 replicas + purge protection
+- [x] `terraform test` with `mock_provider "azurerm"`, **at least 3 assertions** (e.g. prod replica count)
+- [x] Note what you would add before a real apply (remote state, RBAC, networking, etc.)
 
 ## Part 2: ReleaseGuard PowerShell module (~1.5 hrs)
 
 Every command needs: Pester tests, comment-based help, clean PSScriptAnalyzer, proper error handling.
 
-- [ ] Module scaffold: `ReleaseGuard.psd1` / `.psm1`, Public/Private split
-- [ ] PSScriptAnalyzer settings file in repo root
-- [ ] **`Test-BranchCompliance`**
-  - [ ] Input: repo path
-  - [ ] Checks branch names against a policy you define (document the policy)
-  - [ ] Flags commits that reached `main` without a PR
-  - [ ] Readable report, **exits non-zero** on violation
-  - [ ] Pester tests (use a temp git repo fixture)
-- [ ] **`New-ReleaseAudit`**
-  - [ ] Input: two Git refs
-  - [ ] Writes Markdown **and** JSON: commits, authors, PR numbers, image tag, checks passed
-  - [ ] Pester tests
-- [ ] **`Invoke-Rollback`**
-  - [ ] Input: environment name
-  - [ ] Finds previously deployed image tag, redeploys, verifies `/version`
-  - [ ] Idempotent (safe to run twice)
-  - [ ] Handles: no previous release, Docker not running, health check timeout
-  - [ ] Pester tests (mock docker)
+- [x] Module scaffold: `ReleaseGuard.psd1` / `.psm1`, Public/Private split
+- [x] PSScriptAnalyzer settings file in repo root
+- [x] **`Test-BranchCompliance`**
+  - [x] Input: repo path
+  - [x] Checks branch names against a policy you define (document the policy)
+  - [x] Flags commits that reached `main` without a PR
+  - [x] Readable report, **exits non-zero** on violation
+  - [x] Pester tests (use a temp git repo fixture)
+- [x] **`New-ReleaseAudit`**
+  - [x] Input: two Git refs
+  - [x] Writes Markdown **and** JSON: commits, authors, PR numbers, image tag, checks passed
+  - [x] Pester tests
+- [x] **`Invoke-Rollback`**
+  - [x] Input: environment name
+  - [x] Finds previously deployed image tag, redeploys, verifies `/version`
+  - [x] Idempotent (safe to run twice)
+  - [x] Handles: no previous release, Docker not running, health check timeout
+  - [x] Pester tests (mock docker)
 
 ## Part 1: Azure Pipelines (~2.5 hrs)
 
@@ -75,7 +77,7 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 - [ ] Trivy or Checkov config scan
 - [ ] Image build
 - [ ] Image vulnerability scan
-- [ ] Decide what **fails** vs. what **warns**, and document why (put it in DESIGN.md)
+- [x] Decide what **fails** vs. what **warns**, and document why (put it in DESIGN.md)
 - [ ] Branch policy on `main` enforcing it (build validation + min reviewers + no direct push)
 - [ ] `Test-BranchCompliance` runs in the PR stage
 
@@ -91,9 +93,9 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 - [ ] `New-ReleaseAudit` output attached to every prod deploy as an artifact
 
 ### Structure
-- [ ] Stages/jobs from YAML **templates** reused by dev and prod
-- [ ] Config in variable groups or template parameters, no copy-paste
-- [ ] Optional: migrations stage (numbered SQL to Postgres container, idempotent)
+- [x] Stages/jobs from YAML **templates** reused by dev and prod
+- [x] Config in variable groups or template parameters, no copy-paste
+- [x] Optional: migrations stage (numbered SQL to Postgres container, idempotent)
 
 ### Evidence (the three required runs)
 - [ ] **Run 1:** PR blocked by your checks
@@ -103,27 +105,27 @@ Runs end to end on the self-hosted agent. Something you would hand to a team of 
 
 ## Part 4: Operations and design (~1 hr)
 
-- [ ] Prometheus + Alertmanager added to Compose
-- [ ] One alert rule you would actually want to be woken for (symptom-based, e.g. 5xx ratio, with `for:` and sensible threshold)
+- [x] Prometheus + Alertmanager added to Compose
+- [x] One alert rule you would actually want to be woken for (symptom-based, e.g. 5xx ratio, with `for:` and sensible threshold)
 - [ ] Make it fire; screenshot in `docs/evidence/`
-- [ ] **RUNBOOK.md**: prod deploy at 01:50, alert at 02:00, a third of requests 5xx
-  - [ ] First 15 minutes, minute by minute
-  - [ ] Rollback vs. fix-forward decision criteria
-  - [ ] Who you tell, and when
-  - [ ] Post-mortem outline
-- [ ] **DESIGN.md** (one page):
-  - [ ] Compose to Terraform / Container Apps mapping
-  - [ ] Secrets + identity flow: Key Vault to pipeline to app
-  - [ ] What changes when 15 pipelines share your agents
-  - [ ] Keeping Azure spend visible and under control
+- [x] **RUNBOOK.md**: prod deploy at 01:50, alert at 02:00, a third of requests 5xx
+  - [x] First 15 minutes, minute by minute
+  - [x] Rollback vs. fix-forward decision criteria
+  - [x] Who you tell, and when
+  - [x] Post-mortem outline
+- [x] **DESIGN.md** (one page):
+  - [x] Compose to Terraform / Container Apps mapping
+  - [x] Secrets + identity flow: Key Vault to pipeline to app
+  - [x] What changes when 15 pipelines share your agents
+  - [x] Keeping Azure spend visible and under control
 
 ## Final checks before submitting
 
-- [ ] Fresh-machine test: README bring-up in 1-2 commands, and teardown, works
-- [ ] PSScriptAnalyzer clean, all Pester tests green
-- [ ] `terraform fmt`, `validate`, `test` green
-- [ ] **Secret scan**: no PATs, tokens, `.tfstate`, `.env` in repo or history
-- [ ] Commit history is readable (small, meaningful commits)
+- [x] Fresh-machine test: README bring-up in 1-2 commands, and teardown, works
+- [x] PSScriptAnalyzer clean, all Pester tests green
+- [x] `terraform fmt`, `validate`, `test` green
+- [x] **Secret scan**: no PATs, tokens, `.tfstate`, `.env` in repo or history
+- [x] Commit history is readable (small, meaningful commits)
 - [ ] You can explain every line of code (follow-up call walks through it)
 - [ ] GitHub repo and Azure DevOps project are both **public**
 - [ ] `docs/TIME.md`: time spent and what you skipped, plus what you would do next
