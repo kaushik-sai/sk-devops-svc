@@ -1,0 +1,249 @@
+# sk-svc-checks: the PR gate's checks on GitHub-hosted runners, so the results are public.
+# A mirror of pipelines/pr.yml: the Azure DevOps project is private, so reviewers cannot see its runs.
+# The Azure pipelines are unchanged: sk-svc-pr stays the required check and deploys stay on the agent.
+# Keep the steps in step with pipelines/templates/checks.yml and build.yml;
+# tests/GitHubActions.Parity.Tests.ps1 fails when a step or a pinned version drifts.
+
+name: sk-svc-checks
+
+on:
+  pull_request:
+    branches: [main]
+  # Runs on main too, so the README badge shows the state of main.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only token: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A new push to a PR cancels the run it replaces; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Pinned tool versions: the same ones as the Azure pipeline templates.
+env:
+  PESTER_VERSION: '5.9.1'
+  SCRIPT_ANALYZER_VERSION: '1.25.0'
+  TRIVY_IMAGE: 'aquasec/trivy:0.75.0'
+  # The Azure agent has these installed; here they are pinned to the versions used to build the repo.
+  TERRAFORM_VERSION: '1.16.5'
+  PROMETHEUS_VERSION: '3.15.0'
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  windows-checks:
+    name: windows-checks
+    # Same OS as the self-hosted agent (pr.yml demands Agent.OS -equals Windows_NT).
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      # Full history and tags: Test-BranchCompliance walks main's history from the baseline tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: 'Tools: pinned Pester and PSScriptAnalyzer'
+        run: |
+          # Install the pinned module versions for this user if they are missing.
+          $modules = @{ 'Pester' = $env:PESTER_VERSION; 'PSScriptAnalyzer' = $env:SCRIPT_ANALYZER_VERSION }
+          foreach ($name in $modules.Keys) {
+              $version = $modules[$name]
+              if (-not (Get-Module -ListAvailable -Name $name | Where-Object { $_.Version -eq [version] $version })) {
+                  Write-Output "Installing $name $version"
+                  Install-Module -Name $name -RequiredVersion $version -Scope CurrentUser -Force -SkipPublisherCheck -Repository PSGallery
+              }
+          }
+
+      - name: 'Tools: pinned Terraform'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          # The wrapper rewrites output and exit codes; the 0-tests guard below reads terraform's own output.
+          terraform_wrapper: false
+
+      # Warn only, like the promtool step it serves.
+      - name: 'Tools: pinned promtool'
+        continue-on-error: true
+        run: |
+          $name = "prometheus-$($env:PROMETHEUS_VERSION).windows-amd64"
+          $base = "https://github.com/prometheus/prometheus/releases/download/v$($env:PROMETHEUS_VERSION)"
+          $zip = Join-Path -Path $env:RUNNER_TEMP -ChildPath "$name.zip"
+          $sums = Join-Path -Path $env:RUNNER_TEMP -ChildPath 'prometheus-sha256sums.txt'
+          Invoke-WebRequest -Uri "$base/$name.zip" -OutFile $zip
+          Invoke-WebRequest -Uri "$base/sha256sums.txt" -OutFile $sums
+          # The archive must match the checksum the release publishes.
+          $line = Get-Content -Path $sums | Where-Object { $_ -match "^[0-9a-f]{64}\s+$([regex]::Escape("$name.zip"))$" } | Select-Object -First 1
+          if (-not $line) { Write-Output "::error::No checksum for $name.zip in sha256sums.txt."; exit 1 }
+          $expected = ($line -split '\s+')[0]
+          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { Write-Output "::error::Checksum mismatch for $name.zip."; exit 1 }
+          Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path -Path $env:RUNNER_TEMP -ChildPath $name)
+
+      - name: 'Lint: PSScriptAnalyzer'
+        run: |
+          Import-Module PSScriptAnalyzer -RequiredVersion $env:SCRIPT_ANALYZER_VERSION
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          $results | Format-Table Severity, RuleName, ScriptName, Line, Message -AutoSize -Wrap | Out-String -Width 200
+          # Information findings are shown but do not fail the build.
+          $blocking = @($results | Where-Object Severity -In 'Error', 'Warning', 'ParseError')
+          if ($blocking.Count -gt 0) {
+              Write-Output "::error::PSScriptAnalyzer: $($blocking.Count) error/warning finding(s)."
+              exit 1
+          }
+          Write-Output 'PSScriptAnalyzer: no errors or warnings.'
+
+      - name: 'Test: Pester'
+        run: |
+          Import-Module Pester -RequiredVersion $env:PESTER_VERSION
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Run.PassThru = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          $config.TestResult.OutputPath = (Join-Path -Path $env:RUNNER_TEMP -ChildPath 'pester.xml')
+          $result = Invoke-Pester -Configuration $config
+
+          # GitHub has no Tests tab, so the totals and any failures go on the run's summary page.
+          $summary = @(
+              '### Pester'
+              ''
+              '| Result | Passed | Failed | Skipped | Total | Duration |'
+              '|---|---|---|---|---|---|'
+              "| $($result.Result) | $($result.PassedCount) | $($result.FailedCount) | $($result.SkippedCount) | $($result.TotalCount) | $([math]::Round($result.Duration.TotalSeconds))s |"
+          )
+          foreach ($test in $result.Failed) {
+              $summary += "- Failed: $($test.ExpandedPath)"
+          }
+          if ($result.FailedContainersCount -gt 0) {
+              $summary += "- $($result.FailedContainersCount) test file(s) failed to run"
+          }
+          $summary | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+          if ($result.Result -ne 'Passed') {
+              Write-Output "::error::Pester: $($result.FailedCount) failed test(s), $($result.FailedContainersCount) test file(s) failed to run."
+              exit 1
+          }
+
+      # Keep the results even when tests failed, so the NUnit file can be downloaded from the run.
+      - name: 'Publish Pester results'
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pester-results
+          path: ${{ runner.temp }}/pester.xml
+          if-no-files-found: ignore
+
+      # The branch name comes in through env, never pasted into the script: a branch name is user input.
+      - name: 'Governance: Test-BranchCompliance'
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          Import-Module ./modules/ReleaseGuard -Force
+          Test-BranchCompliance -RepoPath . -BranchName $env:BRANCH_NAME
+
+      - name: 'Terraform: fmt, validate, test'
+        run: |
+          Set-Location ./terraform
+          terraform version
+          terraform fmt -check -recursive
+          if ($LASTEXITCODE -ne 0) { Write-Output '::error::terraform fmt: files need formatting.'; exit 1 }
+          terraform init -backend=false -input=false
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          terraform validate
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          foreach ($environment in @('dev', 'prod')) {
+              # Each environment's tests run with that environment's real tfvars.
+              $varFile = Join-Path -Path 'envs' -ChildPath "$environment.tfvars"
+              $testFile = Join-Path -Path 'tests' -ChildPath "$environment.tftest.hcl"
+              $output = terraform test "-var-file=$varFile" "-filter=$testFile" 2>&1 | Out-String
+              Write-Output $output
+              if ($LASTEXITCODE -ne 0) { exit 1 }
+              # Guard: a wrong -filter path makes terraform run 0 tests and still say "Success!".
+              if ($output -notmatch '[1-9]\d* passed, 0 failed') {
+                  Write-Output "::error::terraform test ($environment) ran no tests."
+                  exit 1
+              }
+          }
+
+      # Non-blocking, as in the Azure pipeline.
+      - name: 'Monitoring: promtool checks and rule tests (warn only)'
+        continue-on-error: true
+        run: ./scripts/Test-Monitoring.ps1
+
+  linux-image:
+    name: linux-image
+    # The image and Trivy are Linux containers; GitHub's Windows runners only run Windows containers.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Security: Trivy config scan (Terraform, Dockerfile)'
+        run: |
+          # Trivy runs as a pinned container. The repo is mounted read-only; -w /src lets Trivy
+          # find .trivyignore. The named volume shares Trivy's downloads between the two scans.
+          $common = @('run', '--rm', '-v', "$($env:GITHUB_WORKSPACE):/src:ro", '-w', '/src',
+              '-v', 'sksvc-trivy-cache:/root/.cache/trivy', $env:TRIVY_IMAGE, 'config',
+              # Provider downloads from 'terraform init' are not our config.
+              '--skip-dirs', 'terraform/.terraform')
+
+          Write-Output '--- Warn only: LOW and MEDIUM findings ---'
+          docker @common --severity LOW,MEDIUM --exit-code 0 .
+
+          Write-Output '--- Fail: HIGH and CRITICAL findings ---'
+          docker @common --severity HIGH,CRITICAL --exit-code 1 .
+          if ($LASTEXITCODE -ne 0) {
+              Write-Output '::error::Trivy config scan found HIGH/CRITICAL misconfigurations.'
+              exit 1
+          }
+
+      - name: 'Build: image sk-svc:<commit SHA>'
+        run: |
+          $sha = $env:GITHUB_SHA
+          $tag = "sk-svc:$sha"
+          docker build --build-arg "GIT_SHA=$sha" -t $tag .
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # The image must report the SHA it was built from.
+          $label = docker image inspect $tag --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+          if ($label -ne $sha) {
+              Write-Output "::error::Image label is '$label', expected the commit SHA."
+              exit 1
+          }
+          Write-Output "Built $tag"
+
+      # No clean-up step: a GitHub-hosted runner is a fresh machine for every run.
+      - name: 'Security: Trivy image scan'
+        run: |
+          # Scan a saved tar, as on the agent, so both pipelines scan the same way.
+          $tar = Join-Path -Path $env:RUNNER_TEMP -ChildPath 'sk-svc.tar'
+          docker save "sk-svc:$($env:GITHUB_SHA)" -o $tar
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          $common = @('run', '--rm', '-v', "$($env:RUNNER_TEMP):/scan:ro",
+              '-v', "$($env:GITHUB_WORKSPACE):/src:ro", '-w', '/src',
+              '-v', 'sksvc-trivy-cache:/root/.cache/trivy', $env:TRIVY_IMAGE,
+              'image', '--input', '/scan/sk-svc.tar',
+              # Scoped, justified and expiring exceptions; see the comments in the file.
+              '--ignorefile', '/src/.trivyignore.yaml')
+
+          Write-Output '--- Warn only: everything, including vulnerabilities with no fix yet ---'
+          docker @common --exit-code 0
+
+          Write-Output '--- Fail: HIGH and CRITICAL vulnerabilities that have a fix available ---'
+          docker @common --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          if ($LASTEXITCODE -ne 0) {
+              Write-Output '::error::Trivy found fixable HIGH/CRITICAL vulnerabilities in the image.'
+              exit 1
+          }

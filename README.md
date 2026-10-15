@@ -1,5 +1,7 @@
 # sk-devops-svc
 
+[![sk-svc-checks](https://github.com/kaushik-sai/sk-devops-svc/actions/workflows/sk-svc-checks.yml/badge.svg?branch=main)](https://github.com/kaushik-sai/sk-devops-svc/actions/workflows/sk-svc-checks.yml)
+
 A tiny containerised service (`sk-svc`) shipped through Azure Pipelines on a self-hosted agent, with:
 
 - **Release governance in PowerShell**: the ReleaseGuard module checks branch and PR policy, writes a release audit for every prod deploy, and rolls back automatically.
@@ -12,6 +14,7 @@ A tiny containerised service (`sk-svc`) shipped through Azure Pipelines on a sel
 | Service (PowerShell 7 + Pode): `/healthz`, `/version`, `/work`, `/metrics` | [app/](app/), [Dockerfile](Dockerfile) |
 | Local environments (dev, prod, Postgres, monitoring) | [docker-compose.yml](docker-compose.yml), [scripts/](scripts/) |
 | Pipelines: PR gate `sk-svc-pr`, release `sk-svc-main` | [pipelines/](pipelines/) |
+| Public mirror of the PR gate's checks on GitHub Actions: `sk-svc-checks` | [.github/workflows/](.github/workflows/) |
 | ReleaseGuard module: `Test-BranchCompliance`, `New-ReleaseAudit`, `Invoke-Rollback` | [modules/ReleaseGuard/](modules/ReleaseGuard/) |
 | Database migrations | [migrations/](migrations/), [scripts/Invoke-Migrations.ps1](scripts/Invoke-Migrations.ps1) |
 | Terraform (Container Apps, managed identity, Key Vault) | [terraform/](terraform/) |
@@ -149,6 +152,11 @@ The branch policy is in [modules/ReleaseGuard/policy.json](modules/ReleaseGuard/
 
   The queue-time parameter `prodFailRate` creates a deliberately bad prod-only release.
 - Both use the templates in `pipelines/templates/`, configured by template parameters.
+- **`.github/workflows/sk-svc-checks.yml` (`sk-svc-checks`)** runs the PR gate's checks again on GitHub-hosted runners, on every PR and on `main`. Azure DevOps projects can no longer be public, so this is where anyone can see the checks run.
+  - The Azure pipelines are unchanged: `sk-svc-pr` is still the required check, and deploys still run only on the agent.
+  - **`windows-checks`** (same OS as the agent): lint, Pester, `Test-BranchCompliance`, Terraform, and promtool, which is warn only.
+  - **`linux-image`**: the Trivy config scan, the image build and the Trivy image scan. These need Linux containers, which GitHub's Windows runners cannot run.
+  - Tool versions are the same pins as in the templates. `tests/GitHubActions.Parity.Tests.ps1` fails if the two pipelines' steps or pinned versions drift apart.
 
 To register the agent (Windows, run interactively so it can reach Docker Desktop) and set up the Azure DevOps project, follow [docs/MANUAL_STEPS.md](docs/MANUAL_STEPS.md). Use pool `sk-local`, pipelines `sk-svc-pr` and `sk-svc-main`, and environments `sk-svc-dev` and `sk-svc-prod`, with an approval on prod.
 
