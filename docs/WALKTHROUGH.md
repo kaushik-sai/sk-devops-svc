@@ -17,7 +17,7 @@ Plain-English notes on how the repo fits together, one section per build phase, 
 **Likely questions**
 1. *Why does Test-Prereqs not fail when Docker is missing?* Lint, unit tests and Terraform tests don't need Docker. It fails only for what the developer needs to work; the agent's own run fails at the Docker step if Docker is missing.
 2. *Why one wrapper function for external commands?* So tests can mock exactly one thing and stay fast and deterministic.
-3. *Why is Terraform's minimum 1.7?* `mock_provider` in `terraform test` arrived in 1.7.
+3. *Why is Terraform's minimum 1.9?* `mock_provider` in `terraform test` arrived in 1.7, and validation that compares two variables (`max_replicas >= min_replicas`) arrived in 1.9.
 
 ## 1. Service, container, Compose
 
@@ -116,10 +116,10 @@ ReleaseGuard (`modules/ReleaseGuard`) is a small module with exactly three expor
   - `Test-BranchCompliance` runs only in PRs.
   - Terraform runs fmt, init, validate and a test per environment, and fails if 0 tests ran.
   - Trivy config runs twice: LOW/MEDIUM warn, HIGH/CRITICAL fail.
-  - promtool runs, but is non-blocking.
+  - promtool checks the config and runs the alert rule tests; a failure fails the job.
 - `pipelines/templates/build.yml`: builds `sk-svc:<sha>` once and checks the SHA label. It saves the image to a tar and scans it with the pinned Trivy image. The scan runs twice: everything is shown, and only fixable HIGH/CRITICAL fail. It honours `.trivyignore.yaml`.
-- `pipelines/templates/deploy.yml`: runs `Invoke-Deploy.ps1` for one environment and marks `deployStarted`.
-- `scripts/Remove-OldImages.ps1`: runs after a good prod deploy; deletes old `sk-svc` images but keeps the last 3 deployed releases per environment (rollback targets) and anything a container uses.
+- `pipelines/templates/deploy.yml`: runs `Invoke-Deploy.ps1` for one environment and marks `deployStarted`. It clears the mark again when the deploy exits 2 (migrations failed, nothing deployed), so the healthy release is not rolled back.
+- `scripts/Remove-OldImages.ps1`: runs after a good prod deploy; deletes old `sk-svc` images but keeps the last 3 distinct deployed tags per environment (rollback targets; at least 2) and anything a container uses.
 - `pipelines/templates/smoke.yml`: runs `Test-Smoke.ps1` against one environment's port.
 - `pipelines/pr.yml` (`sk-svc-pr`): runs every check plus the image build and scan, then removes the PR image.
 - `pipelines/main.yml` (`sk-svc-main`):
@@ -138,7 +138,7 @@ The same templates serve dev and prod with different parameters (environment, po
 ## 5. Terraform
 
 **Files**
-- `terraform/versions.tf`: Terraform `>= 1.7`, azurerm `~> 4.81` (4.81.0 locked for Windows and Linux). No backend block, because nothing is applied.
+- `terraform/versions.tf`: Terraform `>= 1.9`, azurerm `~> 4.81` (4.81.0 locked for Windows and Linux). No backend block, because nothing is applied.
 - `terraform/variables.tf`, `main.tf`, `outputs.tf`: the root config. `env` must be dev or prod. `db_password` is sensitive, has no default and is never in tfvars.
 - `terraform/envs/dev.tfvars`, `prod.tfvars`: dev has 1 replica and purge protection off; prod has 2 replicas and purge protection on.
 - `terraform/modules/service/main.tf`:
@@ -164,7 +164,7 @@ The same templates serve dev and prod with different parameters (environment, po
 
 **Files**
 - `monitoring/prometheus.yml`: scrapes `app-dev:8080` (job `sk-svc-dev`) and `app-prod:8080` (job `sk-svc-prod`) every 15 s, evaluates rules every 15 s, and sends alerts to `alertmanager:9093`.
-- `monitoring/alerts.yml`: `ProdHighErrorRate`.
+- `monitoring/alerts.yml`: `ProdHighErrorRate` (5xx ratio) and `ProdDown` (prod cannot be scraped).
   - Fires when the prod 5xx ratio is above 5% over 5 minutes, but only when prod gets more than 0.2 requests/s, and only after holding for 2 minutes.
   - Severity `page`, with a summary, a description showing the live percentage, and the runbook link.
 - `monitoring/alerts.test.yml`: `promtool test rules` cases, with no Docker needed.

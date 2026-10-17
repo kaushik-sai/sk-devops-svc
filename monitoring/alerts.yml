@@ -23,3 +23,15 @@ groups:
           description: '{{ $value | humanizePercentage }} of sk-svc prod requests returned 5xx over the last 5 minutes (threshold 5%, for 2 minutes).'
           # Relative link to the runbook in this repo.
           runbook: RUNBOOK.md
+
+      # The error-ratio rule above needs request series, and those go stale when prod is down,
+      # so a full outage would never page. This one pages when Prometheus cannot scrape prod.
+      - alert: ProdDown
+        expr: up{job="sk-svc-prod"} == 0 or absent(up{job="sk-svc-prod"})
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: sk-svc prod is down
+          description: 'Prometheus could not scrape sk-svc prod (app-prod:8080) for 2 minutes.'
+          runbook: RUNBOOK.md

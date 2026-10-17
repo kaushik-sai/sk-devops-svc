@@ -33,7 +33,7 @@ The app only knows `DB_PASSWORD_FILE`, so the code is identical in both places.
 | Branch policy (`Test-BranchCompliance`) | bad branch name, commit on main without `(#n)` after the baseline | | Governance must not be optional |
 | Trivy config (Terraform, Dockerfile) | HIGH, CRITICAL | LOW, MEDIUM | Block what is dangerous; show the rest |
 | Trivy image | HIGH, CRITICAL **with a fix** | lower severities, unfixed CVEs | Fail on what the team can act on. Exceptions live in `.trivyignore.yaml`: one file path each, a reason, and an expiry date |
-| promtool rule tests | | yes (non-blocking) | promtool may be missing on an agent |
+| promtool config checks and rule tests | any failure | | A broken alert rule must not merge. promtool is a required tool on the agent (`Test-Prereqs.ps1`), and the GitHub job installs a pinned, checksum-checked copy |
 
 On GitHub, `main` accepts changes only through a pull request, squash-merged, with `sk-svc-pr` passing; required reviewers are 0 only because this is a one-person repository (an author cannot approve their own PR). The same checks also run publicly on GitHub Actions (`sk-svc-checks`), with the same fail/warn rules; that run is for visibility and is not a required check. Trivy has no Compose scanner; the Compose file is hardened by hand (no capabilities, `no-new-privileges`, localhost-only ports, no DB port).
 

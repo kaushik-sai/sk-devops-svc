@@ -7,7 +7,9 @@ Set-StrictMode -Version Latest
 .DESCRIPTION
     Reads the environment's deploy history (<history folder>/<env>.json). The latest
     entry is the release on the environment now (the bad one). The target is the
-    newest earlier entry with status "deployed" and a different tag.
+    newest earlier entry with status "deployed" that is a different release: another
+    tag, or the same tag with another FAIL_RATE (so a bad FAIL_RATE on the current
+    image rolls back to that image with FAIL_RATE 0, not to an older commit).
 
     Steps:
     1. If the latest entry was itself written by a rollback, the environment is
@@ -80,10 +82,12 @@ function Invoke-Rollback {
         }
     }
 
-    # Target: newest earlier "deployed" entry with a different tag (rollback depth is one release).
+    # Target: newest earlier "deployed" entry that is a different release (rollback depth is one release).
+    $currentFailRate = Get-EntryFailRate -Entry $current
     $target = $null
     for ($i = $entries.Count - 2; $i -ge 0; $i--) {
-        if ($entries[$i].status -eq 'deployed' -and $entries[$i].tag -ne $current.tag) {
+        if ($entries[$i].status -eq 'deployed' -and
+            -not (Test-SameRelease -Entry $entries[$i] -Tag $current.tag -FailRate $currentFailRate)) {
             $target = $entries[$i]
             break
         }
@@ -98,7 +102,7 @@ function Invoke-Rollback {
             -ErrorId 'ReleaseGuard.DockerNotRunning' -Category ResourceUnavailable -ErrorAction Stop
     }
 
-    Write-Information "Rolling back $Environment from $($current.tag) to $($target.tag)"
+    Write-Information "Rolling back $Environment from $($current.tag) (FAIL_RATE=$currentFailRate) to $($target.tag) (FAIL_RATE=0)"
     # FAIL_RATE=0 on purpose: the "bad release" can be the same image with a high
     # FAIL_RATE, so a rollback must restore a known-good configuration too.
     Invoke-ComposeUp -Environment $Environment -ImageTag $target.tag -FailRate 0 -ComposeFile $ComposeFile

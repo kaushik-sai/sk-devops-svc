@@ -100,3 +100,20 @@ run "service" {
     error_message = "ingress should target 8080 and probes should use /healthz"
   }
 }
+
+# 3. The module rejects max_replicas below min_replicas at plan time, instead of
+#    leaving it for the Azure API to refuse during apply.
+run "replica_range" {
+  command = plan
+
+  module {
+    source = "./modules/service"
+  }
+
+  variables {
+    min_replicas = 3
+    max_replicas = 2
+  }
+
+  expect_failures = [var.max_replicas]
+}

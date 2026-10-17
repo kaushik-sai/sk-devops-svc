@@ -31,6 +31,31 @@ function ConvertTo-FailRate {
 
 <#
 .SYNOPSIS
+    Parses PORT. Returns a port between 1 and 65535; anything invalid becomes 8080.
+.DESCRIPTION
+    Same rule as FAIL_RATE: a bad value must not stop the service from starting,
+    so it falls back to the default and a warning is written.
+#>
+function ConvertTo-Port {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param([AllowNull()] [AllowEmptyString()] [string] $Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return 8080
+    }
+    $port = 0
+    $parsed = [int]::TryParse($Value, [Globalization.NumberStyles]::None,
+        [Globalization.CultureInfo]::InvariantCulture, [ref] $port)
+    if (-not $parsed -or $port -lt 1 -or $port -gt 65535) {
+        Write-Warning "PORT '$Value' is not a port number between 1 and 65535. Using 8080."
+        return 8080
+    }
+    return $port
+}
+
+<#
+.SYNOPSIS
     Returns $true if the secret file exists and is not empty. Never returns or logs the secret.
 #>
 function Test-SecretFile {
@@ -59,15 +84,10 @@ function Get-AppConfig {
     [CmdletBinding()]
     param()
 
-    $port = 8080
-    if ($env:PORT) {
-        $port = [int] $env:PORT
-    }
-
     [pscustomobject] @{
         Version       = if ($env:GIT_SHA) { $env:GIT_SHA } else { 'unknown' }
         FailRate      = ConvertTo-FailRate -Value $env:FAIL_RATE
-        Port          = $port
+        Port          = ConvertTo-Port -Value $env:PORT
         SecretLoaded  = Test-SecretFile -Path $env:DB_PASSWORD_FILE
     }
 }

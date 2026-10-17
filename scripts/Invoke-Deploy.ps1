@@ -7,10 +7,13 @@
     2. Starts the environment's app with docker compose (-p sksvc-<env>, IMAGE_TAG=<tag>,
        FAIL_RATE=<rate>).
     3. Polls /healthz until it reports "ok" or the timeout passes.
-    4. Appends a "deployed" entry to the deploy history, unless the latest entry is
-       already this tag as "deployed" (re-running the same deploy adds nothing).
-       If the health check times out, a "failed" entry is appended instead.
-    Exits 0 on success and 1 on any failure.
+    4. Appends a "deployed" entry (tag and FAIL_RATE) to the deploy history, unless the
+       latest entry is already this tag with this FAIL_RATE as "deployed" (re-running the
+       same deploy adds nothing; the same tag with another FAIL_RATE is a new release).
+       If docker compose fails or the health check times out, a "failed" entry is
+       appended instead, so Invoke-Rollback knows the release on the environment is bad.
+    Exits 0 on success, 2 when it failed before the environment was changed (migrations),
+    so there is nothing to roll back, and 1 on any other failure.
 
 .PARAMETER Environment
     dev or prod.
@@ -87,26 +90,33 @@ function Invoke-Deployment {
     Invoke-MigrationScript -Environment $Environment
 
     Write-Information "Deploying sk-svc:$ImageTag to $Environment (FAIL_RATE=$FailRate)"
-    Invoke-ComposeUp -Environment $Environment -ImageTag $ImageTag -FailRate $FailRate -ComposeFile $ComposeFile
+    try {
+        Invoke-ComposeUp -Environment $Environment -ImageTag $ImageTag -FailRate $FailRate -ComposeFile $ComposeFile
+    } catch {
+        # Compose may have stopped or replaced the old container before it failed.
+        Add-DeployHistoryEntry -Environment $Environment -Tag $ImageTag -Status 'failed' -FailRate $FailRate | Out-Null
+        throw
+    }
 
     $healthUrl = "$(Get-EnvironmentBaseUrl -Environment $Environment)/healthz"
     $healthy = Wait-EndpointValue -Url $healthUrl -Property 'status' -ExpectedValue 'ok' -TimeoutSeconds $TimeoutSeconds
     if (-not $healthy) {
         # Record the failure so Invoke-Rollback knows what is on the environment now.
-        Add-DeployHistoryEntry -Environment $Environment -Tag $ImageTag -Status 'failed' | Out-Null
+        Add-DeployHistoryEntry -Environment $Environment -Tag $ImageTag -Status 'failed' -FailRate $FailRate | Out-Null
         Write-Error -Message "$healthUrl was not healthy within $TimeoutSeconds seconds. Recorded as failed." `
             -ErrorId 'ReleaseGuard.HealthCheckTimeout' -Category OperationTimeout -ErrorAction Stop
     }
 
-    # Only record a new entry when this tag is not already the latest deployed one,
-    # so re-running the same deploy does not fill the history with duplicates.
+    # Only record a new entry when this release (tag and FAIL_RATE) is not already the latest
+    # deployed one, so re-running the same deploy does not fill the history with duplicates.
     $entries = Read-DeployHistory -Environment $Environment
-    $alreadyRecorded = $entries.Count -gt 0 -and $entries[-1].tag -eq $ImageTag -and $entries[-1].status -eq 'deployed'
+    $latest = if ($entries.Count -gt 0) { $entries[-1] } else { $null }
+    $alreadyRecorded = $null -ne $latest -and $latest.status -eq 'deployed' -and (Test-SameRelease -Entry $latest -Tag $ImageTag -FailRate $FailRate)
     if ($alreadyRecorded) {
-        Write-Information "$ImageTag is already the latest deployed release of $Environment; history unchanged."
+        Write-Information "$ImageTag (FAIL_RATE=$FailRate) is already the latest deployed release of $Environment; history unchanged."
     } else {
-        Add-DeployHistoryEntry -Environment $Environment -Tag $ImageTag -Status 'deployed' | Out-Null
-        Write-Information "Recorded $ImageTag as deployed to $Environment."
+        Add-DeployHistoryEntry -Environment $Environment -Tag $ImageTag -Status 'deployed' -FailRate $FailRate | Out-Null
+        Write-Information "Recorded $ImageTag (FAIL_RATE=$FailRate) as deployed to $Environment."
     }
 
     return [pscustomobject] @{
@@ -134,6 +144,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         exit 0
     } catch {
         Write-Error -Message "Deploy failed: $($_.Exception.Message)" -ErrorAction Continue
+        # Exit 2: migrations failed, so the environment still runs the previous release.
+        # The pipeline uses it to skip the automatic rollback.
+        if ($_.FullyQualifiedErrorId -like 'ReleaseGuard.MigrationsFailed*') {
+            exit 2
+        }
         exit 1
     }
 }
