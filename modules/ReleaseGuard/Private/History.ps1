@@ -4,9 +4,11 @@ Set-StrictMode -Version Latest
 # (Invoke-Rollback) and scripts/Invoke-Deploy.ps1 can dot-source them.
 #
 # One JSON file per environment: <history folder>/<env>.json, an array of
-#   { tag, deployedAtUtc, status, rolledBackFrom }
+#   { tag, failRate, deployedAtUtc, status, rolledBackFrom }
 # status is deployed | rolled_back | failed. rolledBackFrom is the bad tag when
 # the entry was written by a rollback, otherwise null. Oldest entry first.
+# A release is the tag plus its FAIL_RATE: the same image with another FAIL_RATE is
+# a different release. Entries written before failRate existed count as 0.
 #
 # The folder is outside the repo and the pipeline workspace, so it survives
 # fresh checkouts: $HOME/.releaseguard/history, or $env:RELEASEGUARD_HOME/history.
@@ -60,10 +62,12 @@ function Add-DeployHistoryEntry {
         [Parameter(Mandatory)] [ValidateSet('dev', 'prod')] [string] $Environment,
         [Parameter(Mandatory)] [string] $Tag,
         [Parameter(Mandatory)] [ValidateSet('deployed', 'rolled_back', 'failed')] [string] $Status,
-        [string] $RolledBackFrom
+        [string] $RolledBackFrom,
+        [ValidateRange(0, 1)] [double] $FailRate = 0
     )
     $entry = [pscustomobject] @{
         tag            = $Tag
+        failRate       = $FailRate
         # Stored as an ISO 8601 UTC string, readable by people and tools.
         deployedAtUtc  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
         status         = $Status
@@ -72,4 +76,28 @@ function Add-DeployHistoryEntry {
     $entries = Read-DeployHistory -Environment $Environment
     Write-DeployHistory -Environment $Environment -Entries (@($entries) + $entry)
     return $entry
+}
+
+# The FAIL_RATE an entry was deployed with; 0 for entries written before it was recorded.
+function Get-EntryFailRate {
+    [CmdletBinding()]
+    [OutputType([double])]
+    param([Parameter(Mandatory)] [object] $Entry)
+    $property = $Entry.PSObject.Properties['failRate']
+    if ($null -eq $property -or $null -eq $property.Value) {
+        return [double] 0
+    }
+    return [double] $property.Value
+}
+
+# True when two entries are the same release: same tag and same FAIL_RATE.
+function Test-SameRelease {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)] [object] $Entry,
+        [Parameter(Mandatory)] [string] $Tag,
+        [Parameter(Mandatory)] [double] $FailRate
+    )
+    return $Entry.tag -eq $Tag -and (Get-EntryFailRate -Entry $Entry) -eq $FailRate
 }

@@ -94,6 +94,42 @@ Describe 'Invoke-Rollback' {
         }
     }
 
+    Context 'when the bad release is the same tag with a higher FAIL_RATE' {
+        It 'rolls back to the same tag with FAIL_RATE 0, not to an older commit' {
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-a' -Status 'deployed' | Out-Null
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-b' -Status 'deployed' | Out-Null
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-b' -Status 'deployed' -FailRate 1 | Out-Null
+            $result = Invoke-Rollback -Environment 'prod' -ComposeFile 'compose.yml' -InformationAction Ignore
+            $result.Action | Should -Be 'RolledBack'
+            $result.ToTag | Should -Be 'tag-b'
+            $script:composeFailRate | Should -Be '0'
+            $entries = Read-DeployHistory -Environment 'prod'
+            $entries[2].status | Should -Be 'rolled_back'
+            $entries[3].tag | Should -Be 'tag-b'
+            $entries[3].failRate | Should -Be 0
+            $entries[3].rolledBackFrom | Should -Be 'tag-b'
+        }
+
+        It 'is not a no-op when the bad FAIL_RATE was deployed after an earlier rollback' {
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-a' -Status 'deployed' | Out-Null
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-b' -Status 'rolled_back' | Out-Null
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-a' -Status 'deployed' -RolledBackFrom 'tag-b' | Out-Null
+            Add-DeployHistoryEntry -Environment 'prod' -Tag 'tag-a' -Status 'deployed' -FailRate 1 | Out-Null
+            $result = Invoke-Rollback -Environment 'prod' -ComposeFile 'compose.yml' -InformationAction Ignore
+            $result.Action | Should -Be 'RolledBack'
+            $result.ToTag | Should -Be 'tag-a'
+            $script:composeFailRate | Should -Be '0'
+        }
+
+        It 'reads entries written before failRate existed as FAIL_RATE 0' {
+            Write-DeployHistory -Environment 'prod' -Entries @(
+                [pscustomobject] @{ tag = 'tag-a'; deployedAtUtc = '2026-01-01T00:00:00Z'; status = 'deployed'; rolledBackFrom = $null }
+                [pscustomobject] @{ tag = 'tag-b'; deployedAtUtc = '2026-01-02T00:00:00Z'; status = 'deployed'; rolledBackFrom = $null }
+            )
+            (Invoke-Rollback -Environment 'prod' -ComposeFile 'compose.yml' -InformationAction Ignore).ToTag | Should -Be 'tag-a'
+        }
+    }
+
     It 'throws ReleaseGuard.NoPreviousRelease when there is no history' {
         { Invoke-Rollback -Environment 'dev' -ComposeFile 'compose.yml' -InformationAction Ignore } |
             Should -Throw -ErrorId 'ReleaseGuard.NoPreviousRelease*'

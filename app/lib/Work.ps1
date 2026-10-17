@@ -31,12 +31,14 @@ function Get-WorkOutcome {
 .SYNOPSIS
     Returns $true for paths that count as user traffic in http_requests_total.
 .DESCRIPTION
-    /metrics (Prometheus scrapes) and /healthz (Docker health checks) are machine probes.
-    Counting them would add steady 200s and hide a real error ratio.
+    Only the user-facing routes count: / and /work. Everything else is left out:
+    /metrics (Prometheus scrapes), /healthz (Docker health checks) and /version (deploy and
+    smoke-test polls) are machine probes, and unknown paths (404s from scanners) are noise.
+    Counting them would add steady non-5xx requests and hide a real error ratio.
 #>
 function Test-CountedPath {
     [CmdletBinding()]
     [OutputType([bool])]
     param([Parameter(Mandatory)] [string] $Path)
-    return $Path -notin @('/metrics', '/healthz')
+    return $Path -cin @('/', '/work')
 }

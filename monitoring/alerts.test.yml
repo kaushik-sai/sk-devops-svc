@@ -56,3 +56,55 @@ tests:
       - eval_time: 5m
         alertname: ProdHighErrorRate
         exp_alerts: []
+
+  # 4) Prod stops answering: up drops to 0 after 1 minute. Pending at 2m, firing from 3m.
+  #    The error-ratio rule cannot see this: there are no request series at all.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="sk-svc-prod",instance="app-prod:8080"}'
+        values: '1 1 1 1 0x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ProdDown
+        exp_alerts: []
+      - eval_time: 3m30s
+        alertname: ProdDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: sk-svc-prod
+              instance: app-prod:8080
+            exp_annotations:
+              summary: sk-svc prod is down
+              description: 'Prometheus could not scrape sk-svc prod (app-prod:8080) for 2 minutes.'
+              runbook: RUNBOOK.md
+      - eval_time: 3m30s
+        alertname: ProdHighErrorRate
+        exp_alerts: []
+
+  # 5) Prod is up: no ProdDown.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="sk-svc-prod",instance="app-prod:8080"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ProdDown
+        exp_alerts: []
+
+  # 6) Prod was never scraped (job missing from the config, or Prometheus just started): absent() pages.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="sk-svc-dev",instance="app-dev:8080"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ProdDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: sk-svc-prod
+            exp_annotations:
+              summary: sk-svc prod is down
+              description: 'Prometheus could not scrape sk-svc prod (app-prod:8080) for 2 minutes.'
+              runbook: RUNBOOK.md

@@ -56,7 +56,18 @@ Describe 'Remove-OldImage' {
     It 'does not count failed releases as keepers' {
         Write-FakeHistory -Environment 'prod' -Tags @('good', 'bad') -LastStatus 'failed'
         Mock Invoke-ImageCommand { Get-FakeResult -Output @('good', 'bad') } -ParameterFilter { $Arguments[1] -eq 'ls' }
-        (Remove-OldImage -Keep 1).Removed | Should -Be @('bad')
+        (Remove-OldImage -Keep 2).Removed | Should -Be @('bad')
+    }
+
+    It 'counts distinct tags, so a repeated tag does not push out the rollback target' {
+        # prod: A, then B, then B again (for example with another FAIL_RATE). Rollback needs A.
+        Write-FakeHistory -Environment 'prod' -Tags @('old', 'A', 'B', 'B')
+        Mock Invoke-ImageCommand { Get-FakeResult -Output @('old', 'A', 'B') } -ParameterFilter { $Arguments[1] -eq 'ls' }
+        (Remove-OldImage -Keep 2).Removed | Should -Be @('old')
+    }
+
+    It 'refuses -Keep 1, which would delete the rollback target' {
+        { Remove-OldImage -Keep 1 } | Should -Throw
     }
 
     It 'removes nothing with -WhatIf' {

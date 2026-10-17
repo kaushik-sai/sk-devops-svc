@@ -27,6 +27,12 @@ Describe 'Initialize-SecretFile' {
         $content | Should -Not -Match "`n"
     }
 
+    It 'creates the password file readable by its owner only on Linux and macOS' -Skip:$IsWindows {
+        $path = Join-Path -Path $TestDrive -ChildPath 'private' -AdditionalChildPath 'db_password'
+        Initialize-SecretFile -Path $path -InformationAction SilentlyContinue | Out-Null
+        [System.IO.File]::GetUnixFileMode($path) | Should -Be ([System.IO.UnixFileMode] 'UserRead, UserWrite')
+    }
+
     It 'keeps an existing password' {
         $path = Join-Path -Path $TestDrive -ChildPath 'existing'
         Set-Content -LiteralPath $path -Value 'keep-me' -NoNewline

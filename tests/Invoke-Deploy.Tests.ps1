@@ -63,6 +63,35 @@ Describe 'Invoke-Deployment' {
         (Read-DeployHistory -Environment 'prod').tag | Should -Be @('sha1', 'sha2')
     }
 
+    It 'records the FAIL_RATE with the entry' {
+        Invoke-Deployment -Environment 'prod' -ImageTag 'sha1' -FailRate 0.5 -ComposeFile 'compose.yml' | Out-Null
+        (Read-DeployHistory -Environment 'prod')[0].failRate | Should -Be 0.5
+    }
+
+    It 'adds a new entry when the same tag is deployed with another FAIL_RATE' {
+        Invoke-Deployment -Environment 'prod' -ImageTag 'sha1' -ComposeFile 'compose.yml' | Out-Null
+        $second = Invoke-Deployment -Environment 'prod' -ImageTag 'sha1' -FailRate 1 -ComposeFile 'compose.yml'
+        $second.Recorded | Should -BeTrue
+        $entries = Read-DeployHistory -Environment 'prod'
+        $entries.tag | Should -Be @('sha1', 'sha1')
+        $entries.failRate | Should -Be @(0, 1)
+    }
+
+    It 'treats an old entry without failRate as FAIL_RATE 0' {
+        Write-DeployHistory -Environment 'prod' -Entries @([pscustomobject] @{
+                tag = 'sha1'; deployedAtUtc = '2026-01-01T00:00:00Z'; status = 'deployed'; rolledBackFrom = $null })
+        (Invoke-Deployment -Environment 'prod' -ImageTag 'sha1' -ComposeFile 'compose.yml').Recorded | Should -BeFalse
+    }
+
+    It 'records a failed entry when docker compose fails' {
+        Mock Invoke-DockerCommand { [pscustomobject] @{ ExitCode = 1; Output = 'No such image' } }
+        { Invoke-Deployment -Environment 'dev' -ImageTag 'sha1' -ComposeFile 'compose.yml' } |
+            Should -Throw -ErrorId 'ReleaseGuard.ComposeFailed*'
+        $entries = Read-DeployHistory -Environment 'dev'
+        $entries.Count | Should -Be 1
+        $entries[0].status | Should -Be 'failed'
+    }
+
     It 'stops before compose when migrations fail' {
         Mock Invoke-MigrationScript { throw 'migration 002 failed' }
         { Invoke-Deployment -Environment 'dev' -ImageTag 'sha1' -ComposeFile 'compose.yml' } | Should -Throw '*migration 002 failed*'
@@ -99,5 +128,23 @@ Describe 'Invoke-MigrationScript' {
         $fake = Join-Path -Path $script:fakeScripts -ChildPath 'fail.ps1'
         Set-Content -Path $fake -Value 'param($Environment) exit 3'
         { Invoke-MigrationScript -Environment 'dev' -ScriptPath $fake } | Should -Throw -ErrorId 'ReleaseGuard.MigrationsFailed*'
+    }
+}
+
+Describe 'Invoke-Deploy.ps1 exit codes' {
+    It 'exits 2 when migrations fail, so the pipeline skips the rollback' {
+        Remove-Item -Path (Join-Path -Path $script:tempHome -ChildPath 'history') -Recurse -Force -ErrorAction SilentlyContinue
+        # No password file: Invoke-Migrations.ps1 fails before it touches Docker.
+        $scriptPath = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'scripts', 'Invoke-Deploy.ps1'
+        $pwsh = (Get-Process -Id $PID).Path
+        $oldSecret = $env:SKSVC_DB_PASSWORD_FILE
+        try {
+            $env:SKSVC_DB_PASSWORD_FILE = Join-Path -Path $script:tempHome -ChildPath 'no-such-password-file'
+            & $pwsh -NoProfile -NonInteractive -File $scriptPath -Environment 'dev' -ImageTag 'sha1' 2>&1 | Out-Null
+            $LASTEXITCODE | Should -Be 2
+        } finally {
+            $env:SKSVC_DB_PASSWORD_FILE = $oldSecret
+        }
+        (Read-DeployHistory -Environment 'dev').Count | Should -Be 0
     }
 }

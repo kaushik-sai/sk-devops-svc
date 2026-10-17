@@ -96,11 +96,16 @@ function Wait-EndpointValue {
         [int] $TimeoutSeconds = 60,
         [int] $IntervalSeconds = 2
     )
-    # Counting attempts (instead of reading the clock) keeps the loop simple and testable.
+    # Two limits: a number of attempts (simple and testable with a mocked Start-Sleep) and a
+    # deadline, so slow responses cannot stretch the wait far past TimeoutSeconds.
     $attempts = [math]::Max(1, [math]::Ceiling($TimeoutSeconds / $IntervalSeconds))
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
     for ($i = 1; $i -le $attempts; $i++) {
+        # Each request may use at most the time that is left (5 s at most, 1 s at least).
+        $remaining = $TimeoutSeconds - $clock.Elapsed.TotalSeconds
+        $requestTimeout = [int] [math]::Max(1, [math]::Min(5, [math]::Floor($remaining)))
         try {
-            $response = Invoke-RestMethod -Uri $Url -TimeoutSec 5
+            $response = Invoke-RestMethod -Uri $Url -TimeoutSec $requestTimeout
             if ("$($response.$Property)" -eq $ExpectedValue) {
                 return $true
             }
@@ -108,6 +113,9 @@ function Wait-EndpointValue {
         } catch {
             # Not up yet (connection refused, 5xx, not JSON): keep waiting.
             Write-Verbose "Attempt $i/$($attempts): $($_.Exception.Message)"
+        }
+        if ($clock.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            break
         }
         if ($i -lt $attempts) {
             Start-Sleep -Seconds $IntervalSeconds

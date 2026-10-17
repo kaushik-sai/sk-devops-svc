@@ -134,6 +134,22 @@ Describe 'Wait-EndpointValue' {
             Should -BeFalse
         Should -Invoke Invoke-RestMethod -Times 5 -Exactly
     }
+
+    It 'never gives one request more time than TimeoutSeconds' {
+        Mock Invoke-RestMethod { [pscustomobject] @{ version = 'old' } }
+        Wait-EndpointValue -Url 'http://x/version' -Property 'version' -ExpectedValue 'new' -TimeoutSeconds 2 -IntervalSeconds 1 | Out-Null
+        Should -Invoke Invoke-RestMethod -Times 0 -ParameterFilter { $TimeoutSec -gt 2 }
+    }
+
+    It 'stops at the deadline when responses are slow' {
+        # Each response takes 1.6 s. The attempt count alone would allow 3 requests (about 4.8 s).
+        Mock Invoke-RestMethod { [System.Threading.Thread]::Sleep(1600); [pscustomobject] @{ version = 'old' } }
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
+        Wait-EndpointValue -Url 'http://x/version' -Property 'version' -ExpectedValue 'new' -TimeoutSeconds 3 -IntervalSeconds 1 |
+            Should -BeFalse
+        Should -Invoke Invoke-RestMethod -Times 2 -Exactly
+        $clock.Elapsed.TotalSeconds | Should -BeLessThan 4.5
+    }
 }
 
 Describe 'Test-DockerRunning' {

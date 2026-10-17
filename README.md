@@ -7,7 +7,7 @@ A tiny containerised service (`sk-svc`) shipped through Azure Pipelines on a sel
 - **Release governance in PowerShell**: the ReleaseGuard module checks branch and PR policy, writes a release audit for every prod deploy, and rolls back automatically.
 - **Promotion of one image**: built once, tagged with the commit SHA, promoted from dev to prod.
 - **Terraform for Azure Container Apps**: tested with a mocked provider, never applied.
-- **Prometheus, Alertmanager and Grafana**, with a unit-tested alert rule.
+- **Prometheus, Alertmanager and Grafana**, with unit-tested alert rules (high error ratio, and prod down).
 
 | Part | Where |
 |---|---|
@@ -33,7 +33,7 @@ Windows with PowerShell 7 (the code also runs on Linux pwsh 7) and:
 | Docker Desktop (Linux containers) with Compose v2 | built with 29.8 / Compose 5.5 | running the stack, the agent |
 | Pester | 5.x (5.9.1) | tests |
 | PSScriptAnalyzer | 1.20+ (1.25.0) | lint |
-| Terraform | 1.7+ (1.16.5) | Terraform checks (`mock_provider` needs 1.7) |
+| Terraform | 1.9+ (1.16.5) | Terraform checks (`mock_provider` needs 1.7, cross-variable validation needs 1.9) |
 | promtool | from Prometheus 3.x (3.15.0) | alert rule tests |
 | Trivy | 0.50+ (0.75.0), optional locally | security scans (the pipeline runs the `aquasec/trivy:0.75.0` image) |
 
@@ -142,7 +142,7 @@ The branch policy is in [modules/ReleaseGuard/policy.json](modules/ReleaseGuard/
   - Terraform fmt, validate and test
   - a Trivy config scan
   - the image build and a Trivy image scan
-  - promtool tests, which are non-blocking
+  - promtool config checks and alert rule tests
 
   What fails and what only warns is set out in [DESIGN.md](DESIGN.md).
 - **`pipelines/main.yml` (`sk-svc-main`)** runs on merge to `main`:
@@ -154,7 +154,7 @@ The branch policy is in [modules/ReleaseGuard/policy.json](modules/ReleaseGuard/
 - Both use the templates in `pipelines/templates/`, configured by template parameters.
 - **`.github/workflows/sk-svc-checks.yml` (`sk-svc-checks`)** runs the PR gate's checks again on GitHub-hosted runners, on every PR and on `main`. Azure DevOps projects can no longer be public, so this is where anyone can see the checks run.
   - The Azure pipelines are unchanged: `sk-svc-pr` is still the required check, and deploys still run only on the agent.
-  - **`windows-checks`** (same OS as the agent): lint, Pester, `Test-BranchCompliance`, Terraform, and promtool, which is warn only.
+  - **`windows-checks`** (same OS as the agent): lint, Pester, `Test-BranchCompliance`, Terraform, and promtool.
   - **`linux-image`**: the Trivy config scan, the image build and the Trivy image scan. These need Linux containers, which GitHub's Windows runners cannot run.
   - Tool versions are the same pins as in the templates. `tests/GitHubActions.Parity.Tests.ps1` fails if the two pipelines' steps or pinned versions drift apart.
 
