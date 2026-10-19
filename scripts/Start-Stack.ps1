@@ -125,6 +125,17 @@ function Get-SecretFilePath {
     return Join-Path -Path $script:RepoRoot -ChildPath '.secrets' -AdditionalChildPath 'db_password'
 }
 
+# Owner-only access on Linux and macOS: 600 for the file. On Windows the shared secret folder
+# gets its ACL from scripts/Initialize-AgentHost.ps1, and a clone under the user's profile is
+# already private. A separate function so tests can mock it.
+function Set-OwnerOnlyPermission {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)] [string] $Path)
+    if ($PSCmdlet.ShouldProcess($Path, 'Set owner-only permissions')) {
+        [System.IO.File]::SetUnixFileMode($Path, [System.IO.UnixFileMode] 'UserRead, UserWrite')
+    }
+}
+
 function Initialize-SecretFile {
     [CmdletBinding()]
     [OutputType([string])]
@@ -136,6 +147,12 @@ function Initialize-SecretFile {
     }
     $folder = Split-Path -Path $Path -Parent
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    if (-not $IsWindows) {
+        # Linux and macOS create files world-readable (umask 022). Create the file empty and
+        # owner-only first, so the password is never readable by other local users.
+        Set-Content -LiteralPath $Path -Value '' -NoNewline
+        Set-OwnerOnlyPermission -Path $Path
+    }
     # -NoNewline: the password is exactly the file content, with no trailing newline.
     Set-Content -LiteralPath $Path -Value (New-RandomSecret) -NoNewline
     Write-Information "Generated a random database password in $Path."

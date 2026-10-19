@@ -39,15 +39,17 @@ Describe 'Get-WorkOutcome' {
 Describe 'Test-CountedPath' {
     It 'counts user traffic: <Path>' -ForEach @(
         @{ Path = '/work' }
-        @{ Path = '/version' }
-        @{ Path = '/unknown' }
+        @{ Path = '/' }
     ) {
         Test-CountedPath -Path $Path | Should -BeTrue
     }
 
-    It 'does not count probes: <Path>' -ForEach @(
+    It 'does not count probes or unknown paths: <Path>' -ForEach @(
         @{ Path = '/metrics' }
         @{ Path = '/healthz' }
+        @{ Path = '/version' }
+        @{ Path = '/unknown' }
+        @{ Path = '/WORK' }
     ) {
         Test-CountedPath -Path $Path | Should -BeFalse
     }

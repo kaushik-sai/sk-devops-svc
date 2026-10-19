@@ -20,6 +20,13 @@ Describe 'Get-MetricText' {
         $text | Should -Match '(?m)^http_request_duration_seconds_sum 0\.24'
     }
 
+    It 'escapes quotes, backslashes and newlines in the version label' {
+        $store = New-MetricStore -Version "a`"b\c`nevil_metric 1"
+        $text = Get-MetricText -Store $store
+        $text | Should -Match ([regex]::Escape('app_info{version="a\"b\\c\nevil_metric 1"} 1'))
+        $text | Should -Not -Match '(?m)^evil_metric'
+    }
+
     It 'makes histogram buckets cumulative and ends with +Inf equal to the count' {
         $store = New-MetricStore -Version 'x'
         Add-RequestMetric -Store $store -StatusCode 200 -DurationSeconds 0.004   # fits 0.005

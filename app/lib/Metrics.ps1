@@ -79,6 +79,20 @@ function Format-MetricNumber {
 
 <#
 .SYNOPSIS
+    Escapes a label value for the Prometheus text format: backslash, double quote and newline.
+.DESCRIPTION
+    The version label comes from GIT_SHA. Without escaping, a quote breaks the whole scrape
+    and a newline can add made-up series.
+#>
+function Format-LabelValue {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Value)
+    return $Value.Replace('\', '\\').Replace('"', '\"').Replace("`r", '').Replace("`n", '\n')
+}
+
+<#
+.SYNOPSIS
     Returns all metrics in the Prometheus text exposition format.
 #>
 function Get-MetricText {
@@ -107,7 +121,7 @@ function Get-MetricText {
 
     $lines.Add('# HELP app_info Build information. The value is always 1.')
     $lines.Add('# TYPE app_info gauge')
-    $lines.Add("app_info{version=`"$($Store.Version)`"} 1")
+    $lines.Add("app_info{version=`"$(Format-LabelValue -Value $Store.Version)`"} 1")
 
     $lines.Add('# HELP http_request_duration_seconds Request duration in seconds.')
     $lines.Add('# TYPE http_request_duration_seconds histogram')

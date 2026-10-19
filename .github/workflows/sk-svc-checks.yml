@@ -69,9 +69,8 @@ jobs:
           # The wrapper rewrites output and exit codes; the 0-tests guard below reads terraform's own output.
           terraform_wrapper: false
 
-      # Warn only, like the promtool step it serves.
+      # Blocking, like the promtool step it serves: without promtool the monitoring checks cannot run.
       - name: 'Tools: pinned promtool'
-        continue-on-error: true
         run: |
           $name = "prometheus-$($env:PROMETHEUS_VERSION).windows-amd64"
           $base = "https://github.com/prometheus/prometheus/releases/download/v$($env:PROMETHEUS_VERSION)"
@@ -175,9 +174,8 @@ jobs:
               }
           }
 
-      # Non-blocking, as in the Azure pipeline.
-      - name: 'Monitoring: promtool checks and rule tests (warn only)'
-        continue-on-error: true
+      # Blocking, as in the Azure pipeline: a broken alert rule must not merge.
+      - name: 'Monitoring: promtool checks and rule tests'
         run: ./scripts/Test-Monitoring.ps1
 
   linux-image:

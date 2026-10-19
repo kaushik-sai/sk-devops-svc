@@ -2,6 +2,29 @@ BeforeAll {
     . (Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'app', 'lib', 'Config.ps1')
 }
 
+Describe 'ConvertTo-Port' {
+    It 'parses <Value> as <Expected>' -ForEach @(
+        @{ Value = '9000'; Expected = 9000 }
+        @{ Value = '1'; Expected = 1 }
+        @{ Value = '65535'; Expected = 65535 }
+        @{ Value = ''; Expected = 8080 }
+        @{ Value = $null; Expected = 8080 }
+    ) {
+        ConvertTo-Port -Value $Value | Should -Be $Expected
+    }
+
+    It 'falls back to 8080 with a warning for <Value>' -ForEach @(
+        @{ Value = 'abc' }
+        @{ Value = '0' }
+        @{ Value = '65536' }
+        @{ Value = '-1' }
+        @{ Value = '80.5' }
+    ) {
+        ConvertTo-Port -Value $Value -WarningVariable warnings -WarningAction SilentlyContinue | Should -Be 8080
+        $warnings | Should -Not -BeNullOrEmpty
+    }
+}
+
 Describe 'ConvertTo-FailRate' {
     It 'parses <Value> as <Expected>' -ForEach @(
         @{ Value = '0'; Expected = 0 }

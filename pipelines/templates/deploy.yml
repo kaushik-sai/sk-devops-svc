@@ -22,9 +22,17 @@ steps:
     displayName: 'Prepare: network, database password, Postgres'
 
   - pwsh: |
-      # Tells a later rollback step that this environment may have changed.
+      # Tells a later rollback step that this environment may have changed. Set first, so a
+      # step that is cancelled or times out mid-deploy still gets rolled back.
       Write-Output '##vso[task.setvariable variable=deployStarted]true'
       ./scripts/Invoke-Deploy.ps1 -Environment '${{ parameters.environment }}' -ImageTag '${{ parameters.sha }}' -FailRate ${{ parameters.failRate }}
+      $code = $LASTEXITCODE
+      # Exit 2: migrations failed before anything was deployed. The previous release is still
+      # running and healthy, so a rollback would only move the environment further back.
+      if ($code -eq 2) {
+          Write-Output '##vso[task.setvariable variable=deployStarted]false'
+      }
+      exit $code
     displayName: 'Deploy: sk-svc:<sha> to ${{ parameters.environment }} (FAIL_RATE=${{ parameters.failRate }})'
 
   - pwsh: |

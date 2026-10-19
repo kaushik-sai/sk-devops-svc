@@ -27,8 +27,8 @@ Describe 'Get-PrereqStatus' {
         $tf.Version | Should -Be '1.9.0'
     }
 
-    It 'marks terraform too old below 1.7 (mock_provider needs 1.7)' {
-        Mock Invoke-ToolCommand { 'Terraform v1.6.6' } -ParameterFilter { $Command -eq 'terraform' }
+    It 'marks terraform too old below 1.9 (cross-variable validation needs 1.9)' {
+        Mock Invoke-ToolCommand { 'Terraform v1.8.5' } -ParameterFilter { $Command -eq 'terraform' }
         Mock Invoke-ToolCommand { $null }
         $tf = Get-PrereqStatus | Where-Object Name -EQ 'terraform'
         $tf.Found | Should -BeTrue

@@ -3,7 +3,7 @@
     Checks that the tools this repo needs are installed, and prints how to install what is missing.
 
 .DESCRIPTION
-    Checks PowerShell 7+, Git, Terraform 1.7+, Pester 5+, PSScriptAnalyzer and promtool.
+    Checks PowerShell 7+, Git, Terraform 1.9+, Pester 5+, PSScriptAnalyzer and promtool.
     Docker (with Compose) and Trivy are reported as "optional here, required on the agent":
     you can lint and test without them, but the pipeline agent needs them.
     Exits 1 if a required tool is missing or too old, otherwise 0.
@@ -55,7 +55,7 @@ function Get-PrereqStatus {
     $tools = @(
         @{ Name = 'git'; Command = 'git'; Arguments = @('--version'); MinVersion = '2.30'; Required = $true
             Install = 'winget install --id Git.Git -e' }
-        @{ Name = 'terraform'; Command = 'terraform'; Arguments = @('version'); MinVersion = '1.7'; Required = $true
+        @{ Name = 'terraform'; Command = 'terraform'; Arguments = @('version'); MinVersion = '1.9'; Required = $true
             Install = 'winget install --id Hashicorp.Terraform -e' }
         @{ Name = 'promtool'; Command = 'promtool'; Arguments = @('--version'); MinVersion = '2.0'; Required = $true
             Install = 'Download the prometheus zip from https://github.com/prometheus/prometheus/releases and put promtool on PATH' }

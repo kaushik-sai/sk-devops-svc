@@ -80,10 +80,14 @@ steps:
       failTaskOnFailedTests: true
 
   - ${{ if eq(parameters.runBranchCompliance, true) }}:
+    # The branch name comes in through env, never pasted into the script: a branch name is
+    # user input, and a name like feature/a';<code>;' would otherwise run as code.
     - pwsh: |
         Import-Module ./modules/ReleaseGuard -Force
-        Test-BranchCompliance -RepoPath . -BranchName '${{ parameters.branchName }}'
+        Test-BranchCompliance -RepoPath . -BranchName $env:BRANCH_NAME
       displayName: 'Governance: Test-BranchCompliance'
+      env:
+        BRANCH_NAME: ${{ parameters.branchName }}
 
   - ${{ if eq(parameters.runTerraform, true) }}:
     - pwsh: |
@@ -131,7 +135,7 @@ steps:
       displayName: 'Security: Trivy config scan (Terraform, Dockerfile)'
 
   - ${{ if eq(parameters.runMonitoringTests, true) }}:
-    # Non-blocking: promtool may not be installed on every agent.
+    # Blocking: a broken alert rule must not merge. promtool is a required tool on the agent
+    # (scripts/Test-Prereqs.ps1), and Test-Monitoring.ps1 fails clearly when it is missing.
     - pwsh: ./scripts/Test-Monitoring.ps1
-      displayName: 'Monitoring: promtool checks and rule tests (warn only)'
-      continueOnError: true
+      displayName: 'Monitoring: promtool checks and rule tests'

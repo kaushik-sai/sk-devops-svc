@@ -7,13 +7,14 @@
     sk-svc:<sha> of about 330 MB, so without cleanup the agent's disk slowly fills up.
 
     Kept:
-      - the tags of the last -Keep "deployed" releases of each environment (dev and prod),
-        read from the ReleaseGuard deploy history, so Invoke-Rollback always finds its target;
+      - the last -Keep distinct tags with a "deployed" entry in each environment (dev and prod),
+        read from the ReleaseGuard deploy history. -Keep is at least 2, so the current release
+        and the one Invoke-Rollback would go back to are always kept;
       - any image a container (running or stopped) was created from.
     Everything else named sk-svc is removed. Use -WhatIf to see the list without deleting.
 
 .PARAMETER Keep
-    How many recent deployed releases to keep per environment. Default 3.
+    How many recent distinct deployed tags to keep per environment. Default 3, minimum 2.
 
 .EXAMPLE
     pwsh ./scripts/Remove-OldImages.ps1 -WhatIf
@@ -23,7 +24,7 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateRange(1, 50)] [int] $Keep = 3
+    [ValidateRange(2, 50)] [int] $Keep = 3
 )
 
 Set-StrictMode -Version Latest
@@ -43,16 +44,20 @@ function Invoke-ImageCommand {
 function Get-ProtectedTag {
     [CmdletBinding()]
     [OutputType([string[]])]
-    param([Parameter(Mandatory)] [int] $Keep)
+    param([Parameter(Mandatory)] [ValidateRange(2, 50)] [int] $Keep)
 
     $protected = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($environment in @('dev', 'prod')) {
         # Assign first: Read-DeployHistory returns the array as one object.
         $history = Read-DeployHistory -Environment $environment
         $deployed = @($history | Where-Object { $_.status -eq 'deployed' })
-        foreach ($entry in ($deployed | Select-Object -Last $Keep)) {
-            $protected.Add($entry.tag) | Out-Null
+        # Newest first, counting distinct tags: a tag deployed twice in a row (for example with
+        # another FAIL_RATE) must not push the previous release out of the kept set.
+        $kept = [System.Collections.Generic.HashSet[string]]::new()
+        for ($i = $deployed.Count - 1; $i -ge 0 -and $kept.Count -lt $Keep; $i--) {
+            $kept.Add($deployed[$i].tag) | Out-Null
         }
+        $protected.UnionWith($kept)
     }
 
     # Images used by containers, for example a stack started by hand outside the history.
@@ -68,7 +73,7 @@ function Get-ProtectedTag {
 function Remove-OldImage {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([pscustomobject])]
-    param([Parameter(Mandatory)] [int] $Keep)
+    param([Parameter(Mandatory)] [ValidateRange(2, 50)] [int] $Keep)
 
     $list = Invoke-ImageCommand -Arguments @('image', 'ls', 'sk-svc', '--format', '{{.Tag}}')
     if ($list.ExitCode -ne 0) {

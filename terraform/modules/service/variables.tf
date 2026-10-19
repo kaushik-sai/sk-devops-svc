@@ -37,6 +37,12 @@ variable "max_replicas" {
     condition     = var.max_replicas >= 1 && var.max_replicas <= 10
     error_message = "max_replicas must be between 1 and 10."
   }
+
+  # Cross-variable validation needs Terraform 1.9 or later (required_version below).
+  validation {
+    condition     = var.max_replicas >= var.min_replicas
+    error_message = "max_replicas must be at least min_replicas."
+  }
 }
 
 variable "fail_rate" {

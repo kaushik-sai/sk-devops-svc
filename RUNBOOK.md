@@ -47,6 +47,8 @@ Import-Module ./modules/ReleaseGuard
 
 # 1. Roll back prod to the previous successfully deployed release.
 #    Safe to run twice: a second run reports "already rolled back" and does nothing.
+#    "Previous release" means another tag, or the same tag with another FAIL_RATE: if the bad
+#    release is the current image with a high FAIL_RATE, it goes back to that image with FAIL_RATE 0.
 Invoke-Rollback -Environment prod
 
 # 2. Verify the running version is the previous SHA.
@@ -64,6 +66,15 @@ If `Invoke-Rollback` fails:
 - **"no previous release"**: there is nothing to roll back to. Fix forward, or redeploy a known-good SHA with `pwsh ./scripts/Invoke-Deploy.ps1 -Environment prod -ImageTag <sha>`.
 - **"Docker is not running"**: start Docker Desktop on the agent, then run it again.
 - **"health check timed out"**: the old version did not come up either. Check `docker logs`; the problem is probably not the release (host, database, network). Escalate.
+
+## If `ProdDown` pages instead
+
+`ProdDown` means Prometheus cannot scrape prod at all for 2 minutes: the container is stopped, crash-looping or not answering. `ProdHighErrorRate` cannot fire then, because there are no request series.
+1. `docker ps -a --filter name=sksvc-prod` and `docker logs --tail 100 sksvc-prod-app-prod-1`: is it running, restarting, or exited?
+2. If it stopped right after a deploy, roll back with the commands above.
+3. If no deploy happened, start it again (`docker compose -p sksvc-prod --profile prod up -d app-prod` with `IMAGE_TAG` set to the SHA in the deploy history) and look at the host (Docker Desktop, disk, memory).
+
+A prod deploy that fails during migrations exits with code 2 and leaves the previous release running. The pipeline then skips the automatic rollback, so the run is red but prod is unchanged. Fix the migration and deploy again.
 
 ## Who to tell, and when
 
